@@ -34,3 +34,18 @@ Icon
 # Files that might appear on external disk
 .Spotlight-V100
 .Trashes
+
+#MICROCHIP MPLAB files unrelated
+*.d
+*.p1
+*.pre
+*.cmf
+*.elf
+*.hex
+*.hxl
+*.lst
+*.map
+*.obj
+*.rlf
+*.sdb
+*.sym
