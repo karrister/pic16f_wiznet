@@ -18,8 +18,6 @@
 #define KARRI_DEBUG //LED debug
 #define UART_DEBUG //send debug to serial
 #define SPI_DEBUG //for debugging SPI, connection test etc
-//#define SPI_SLAVE_BUSPIRATE_TEST //SPI debug with bus pirate NOT IMPLEMENTED
-/**/
 
 #define KARRI_OK                    1
 #define KARRI_NOK                   0
@@ -324,7 +322,6 @@ int g_mainSM_state = IDLE;
 
 
 /*SPI macros*/
-#if 1
 #define CS_ASSERT() \
   do { \
     PORTCbits.RC6 = 0; \
@@ -334,21 +331,7 @@ int g_mainSM_state = IDLE;
   do { \
     PORTCbits.RC6 = 1; \
   } while (0)
-#else
-#define CS_ASSERT() \
-  do { \
-    g_portc = PORTC; \
-    g_portc &= 0x40; \
-    PORTC = g_portc;\
-  } while (0)
 
-#define CS_DEASSERT() \
-  do { \
-    g_portc = PORTC; \
-    g_portc |= 0xBF; \
-    PORTC = g_portc;\
-  } while (0)
-#endif
 
 #define DELAY_BETWEEN_COMMANDS() delay(5000)
 
@@ -360,17 +343,7 @@ int g_mainSM_state = IDLE;
         PIR1bits.SSPIF = 0; \
     } while(0)
 
-#ifdef READ_OLD_IMPLEMENATION
-#define WIZNET_WRITE(addrh, addrl, byte) \
-    do { \
-        CS_ASSERT();\
-        SPI_SYNC_TX_BYTE(0xF0);\
-        SPI_SYNC_TX_BYTE(addrh);\
-        SPI_SYNC_TX_BYTE(addrl);\
-        SPI_SYNC_TX_BYTE(byte);\
-        CS_DEASSERT();\
-    } while(0)
-#else
+
 #define WIZNET_WRITE(addr, byte) \
     do { \
         CS_ASSERT();\
@@ -380,24 +353,7 @@ int g_mainSM_state = IDLE;
         SPI_SYNC_TX_BYTE(byte);\
         CS_DEASSERT();\
     } while(0)
-#endif
 
-#ifdef READ_OLD_IMPLEMENATION
-inline unsigned char
-wiznet_read(unsigned char addrh,
-            unsigned char addrl)
-{
-    unsigned char rxByte = 0;
-    CS_ASSERT();
-    SPI_SYNC_TX_BYTE(0x0F);
-    SPI_SYNC_TX_BYTE(addrh);
-    SPI_SYNC_TX_BYTE(addrl);
-    SPI_SYNC_TX_BYTE(0x00); //dummy data, just for clock output
-    rxByte = SSPBUF;
-    CS_DEASSERT();
-    return rxByte;
-}
-#else
 inline unsigned char
 wiznet_read(unsigned int addr)
 {
@@ -411,36 +367,8 @@ wiznet_read(unsigned int addr)
     CS_DEASSERT();
     return rxByte;
 }
-#endif
 
-#if 0
-#define SPI_SYNC_TX_BYTE_FOR_RX(tx_byte) \
-    do { \
-        PIR1bits.SSPIF = 0; \
-        SSPBUF = tx_byte; \
-    } while(0)
-#endif
-#if 0 //implement later
-/* Sending dummy data (0xFF) while receiving, to get clock out */
-#define SPI_SYNC_RX_BYTE(&rx_byte) \
-    do { \
-        SSPBUF = 0xFF; \
-        while(!PIR1bits.SSPIF); \
-        PIR1bits.SSPIF = 0; \
-        *rx_byte = SSPBUF; \
-    } while(0)
-#endif
 
-#ifdef SPI_SLAVE_BUSPIRATE_TEST
-inline short POLL_SS()
-{
-    short ss_state = 0;
-    g_portc = PORTC;
-    ss_state = g_portc && 0x40;
-    return ss_state;
-}
-#endif
-/**/
 
 inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int size)
 {
@@ -528,11 +456,7 @@ void wiznet_read_bytes(unsigned int chip_addr, BYTE *rx_buff, unsigned int len)
     int x;
     for(x=0;x<len;x++)
     {
-#ifdef READ_OLD_IMPLEMENATION
-        rx_buff[x] = wiznet_read((unsigned char)(chip_addr & 0xFF00),(unsigned char)(chip_addr & 0x00FF));
-#else
         rx_buff[x] = wiznet_read(chip_addr);
-#endif
         chip_addr++;
     }
 }
@@ -543,9 +467,7 @@ void wiznet_write_bytes(unsigned int chip_addr, BYTE *tx_buff, unsigned int len)
     int x;
     for(x=0;x<len;x++)
     {
-        //WIZNET_WRITE((unsigned char)(chip_addr & 0xFF00),(unsigned char)(chip_addr & 0x00FF),tx_buff[x]);
         WIZNET_WRITE(chip_addr, tx_buff[x]);
-
         chip_addr++;
     }
 }
@@ -561,7 +483,6 @@ short test_wiznet_connection(void)
     short conn_status = KARRI_NOK;
     unsigned char rxByte = 0;
 
-    //debug_print("test_wiznet_connection++\n");
 
     //We use here register REG_GATEWAY_IP3 for testing write & read of the CHIP
     WIZNET_WRITE(0x0004, TEST_BYTE);
@@ -579,7 +500,6 @@ short test_wiznet_connection(void)
         conn_status = KARRI_NOK;
     }
 
-    //debug_print("test_wiznet_connection--\n");
     return conn_status;
 }
 
@@ -755,11 +675,6 @@ void dev_init(void)
     //SPI idle low (CKP = 0), Data transmitted on rising edge (CKE = 1)
     SSPSTAT = /*0xC0;*/ 0x40;
     SSPCON = 0x21; //SCL fOSC/16 == 250kHz
-
-    //karri test:
-    //OPTION_REGbits.nRABPU = 1;
-    //WPUBbits.WPUB4 = 1;
-    //
 
 #ifdef UART_DEBUG
     /*Debug UART init*/
@@ -1125,104 +1040,10 @@ int main(void)
     //Indicate firmware finished
     LED4_ON();
 
-    debug_print("FW end, looping forever\n");
+    debug_print("Firmware end, looping forever\n");
     while(1);
 #endif //KARRI_DEBUG
 
     return 0;
 }
 
-#if 0
-short setLed(short state, short ledNum)
-{
-    short ret = KARRI_NOK;
-    short tempReg = 0;
-
-    /*Sanity check, as we write the value straight to the HW register*/
-    if(state > 1 || state < 0)
-    {
-        return KARRI_NOK;
-    }
-
-    switch(ledNum)
-    {
-        //tempReg = PORTC;
-        //tempReg = tempReg | state;
-        case 1:
-            g_portc ^= (state << (ledNum-1));
-            PORTC = g_portc;
-            ret = KARRI_OK;
-            break;
-        case 2:
-            g_portc ^= (state << (ledNum-1));
-            PORTC = g_portc;
-            ret = KARRI_OK;
-            break;
-        case 3:
-            g_portc ^= (state << (ledNum-1));
-            PORTC = g_portc;
-            ret = KARRI_OK;
-            break;
-        case 4:
-            g_portc ^= (state << (ledNum-1));
-            PORTC = g_portc;
-            ret = KARRI_OK;
-            break;
-        default:
-            ret = KARRI_NOK;
-    }
-
-    return ret;
-}
-#endif //if 0
-
-#if 0
-    /*Write test byte*/
-    CS_ASSERT();
-    //debug_print("CS asserted\n");
-    SSPBUF = 0xF0;
-    while(!PIR1bits.SSPIF);
-    PIR1bits.SSPIF = 0;
-    //debug_print("byte 1 sent\n");
-    SSPBUF = 0x00;
-    while(!PIR1bits.SSPIF);
-    PIR1bits.SSPIF = 0;
-    //debug_print("byte 2 sent\n");
-    SSPBUF = 0x04;
-    while(!PIR1bits.SSPIF);
-    PIR1bits.SSPIF = 0;
-    //debug_print("byte 3 sent\n");
-    SSPBUF = TEST_BYTE;
-    while(!PIR1bits.SSPIF);
-    PIR1bits.SSPIF = 0;
-    //debug_print("byte 4 sent\n");
-    CS_DEASSERT();
-    //debug_print("CS deasserted\n");
-
-    CS_ASSERT();
-    _nop();
-    CS_DEASSERT();
-
-    /*Read test byte*/
-    CS_ASSERT();
-    //debug_print("CS asserted\n");
-    SSPBUF = 0x0F;
-    while(!PIR1bits.SSPIF);
-    PIR1bits.SSPIF = 0;
-    SSPBUF = 0x00;
-    while(!PIR1bits.SSPIF);
-    PIR1bits.SSPIF = 0;
-    SSPBUF = 0x04;
-    while(!PIR1bits.SSPIF);
-    PIR1bits.SSPIF = 0;
-    //debug_print("bytes 1-3 sent, reading\n");
-    SSPBUF = 0xFF; //dummy data for sending while receiving the byte
-
-    while(!PIR1bits.SSPIF);
-    PIR1bits.SSPIF = 0;
-
-    rxByte = SSPBUF;
-    //debug_print(("We read a byte\n"));
-    CS_DEASSERT();
-    //debug_print("CS deasserted\n");
-#endif
