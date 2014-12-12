@@ -1,21 +1,30 @@
-/************************
+/*********************************************
  *  WIZNET W5100 PROJECT
- ************************
- * Testing the capabilities
- * of the W5100 chip, using
- * an Arduino(!!) ethernet
- * shield with PIC16F690.
- * Intention to make a web server
- * that controls the LEDs on
- * the PICkit2 kit board (the CPU)
+ *********************************************
+ * AUTHOR: Karri Kivelä
+ *
+ * CREATION: Spring 2014
+ *
+ * BRIEF: Testing the capabilities of the
+ * W5100 chip, using an Arduino(!!) ethernet
+ * shield with PIC16F690. Intention to make
+ * a web server that controls the LEDs on
+ * the PICkit2 dev kit board (the CPU)
  */
 
 #include <xc.h>
 #include <stdio.h>
+#include <stdlib.h>
 
+
+//Typedefs
+typedef unsigned char DEBUG_MSG;
+
+
+#define EXTENDED_FUNCTIONALITY
 
 /*Debug related defines*/
-#define KARRI_DEBUG //LED debug
+//#define KARRI_DEBUG //LED debug
 #define UART_DEBUG //send debug to serial
 #define SPI_DEBUG //for debugging SPI, connection test etc
 
@@ -354,6 +363,13 @@ int g_mainSM_state = IDLE;
         CS_DEASSERT();\
     } while(0)
 
+
+/**
+* This inline function reads a single byte from the chip. This function manages
+* the data transfer over the SPI bus from the chip towards the master.
+* @param addr The address inside the chip to read from.
+* @return The byte read from the chip.
+*/
 inline unsigned char
 wiznet_read(unsigned int addr)
 {
@@ -369,30 +385,41 @@ wiznet_read(unsigned int addr)
 }
 
 
-
-inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int size)
+/**
+* This function compares the input buffer to a command buffer and tries to find
+* the specified command inside the input buffer (the offset doesn't matter).
+* @param eth_buff pointer to the input buffer.
+* @param cmd pointer to the command buffer.
+* @param input_size the size of the data in the eth_buff input buffer
+* @param cmd_size the size of the command we are looking for
+* @see main()
+* @return The boolean result if the specified command was found inside the input buffer.
+*/
+inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int input_size, unsigned int cmd_size)
 {
-    KARRI_BOOL ret_status = KARRI_OK;
-    int x;
-    for(x=0;x<size;x++)
+    KARRI_BOOL ret_status = KARRI_NOK;
+    int get_cmd_lookup_loop, get_cmd_matching_loop;
+    for(get_cmd_lookup_loop = 0; get_cmd_lookup_loop < input_size; get_cmd_lookup_loop++)
     {
-        if(eth_buff[x] != cmd[x])
-        {
-            ret_status = KARRI_NOK;
-            break;
-        }
+        if(eth_buff[get_cmd_lookup_loop] == cmd[0])
+            for(get_cmd_matching_loop = 0; get_cmd_matching_loop < cmd_size; get_cmd_matching_loop++)
+                if(eth_buff[get_cmd_lookup_loop + get_cmd_matching_loop] != cmd[get_cmd_matching_loop])
+                {
+                    ret_status = KARRI_NOK;
+                    break;
+                }
     }
 
     return ret_status;
 }
 
 
-typedef unsigned char DEBUG_MSG;
+
+
 #ifdef UART_DEBUG
 inline void debug_print(DEBUG_MSG *msg)
 {
     int x;
-#if 1
     for(x=0;x<MAX_UART_PRINT_LENGTH;x++)
     {
         if(msg[x] == '\n') //break character
@@ -409,14 +436,7 @@ inline void debug_print(DEBUG_MSG *msg)
     TXREG = 0x0A;
     while(!TXSTAbits.TRMT);
     TXREG = 0x0D;
-#endif
-#if 0
-    for(x=0;x<10;x++)
-    {
-        TXREG = 0x31 + x;
-        while(!TXSTAbits.TRMT);
-    }
-#endif
+
 }
 #else
 inline void debug_print(DEBUG_MSG *msg)
@@ -424,6 +444,54 @@ inline void debug_print(DEBUG_MSG *msg)
     _nop();
 }
 #endif //UART_DEBUG
+
+#if 0
+/**
+* This inline function makes hexa values, and prints the from the debug UART in
+* the correct way. The current implementation assumes that the input
+* to print are only one byte.
+* @param msg the pointer to the buffer with the message to convert
+* @param offset the offset into the buffer at where the value to convert is found
+* @see main()
+* @see debug_print()
+* @return void
+*/
+inline void debug_print_hexa_to_string(DEBUG_MSG *msg, unsigned short offset)
+{
+    unsigned char  msb, lsb;
+    unsigned short actual_msg_shadow_int[3];
+
+    msb = ((msg[offset]   & 0xF0) >> 4);
+    lsb = ( msg[offset+1] & 0x0F      );
+
+    if(lsb < 0x0a)
+    {
+        actual_msg_shadow_int[0]  = lsb;
+    }
+    else
+    {
+        actual_msg_shadow_int[1]  = 1;
+        actual_msg_shadow_int[0]  = (lsb - 10);
+    }
+
+    if(msb < 0x0a)
+    {
+        actual_msg_shadow_int[1] += msb;
+    }
+    else
+    {
+        actual_msg_shadow_int[2]  = 1;
+        actual_msg_shadow_int[1] += (msb - 10);
+    }
+
+    msg[offset - 1] = (actual_msg_shadow_int[0] + 0x30);
+    msg[offset]     = (actual_msg_shadow_int[1] + 0x30);
+    msg[offset + 1] = (actual_msg_shadow_int[2] + 0x30);
+
+    debug_print((DEBUG_MSG *)msg);
+}
+#endif //if 0
+
 
 
 /*Configuration bits*/
@@ -699,13 +767,14 @@ int main(void)
 {
     short spi_status = KARRI_NOK;
     dev_init();
-
+LED1_ON();
     //Sleep after init (needed?)
     delay(60000);
+LED1_OFF();
     delay(60000);
     delay(60000);
     delay(60000);
-    delay(60000);    
+    delay(60000);
 
 
 #ifdef KARRI_DEBUG
@@ -716,7 +785,7 @@ int main(void)
 #endif //KARRI_DEBUG
 
 #ifdef SPI_DEBUG //When suspect problems with SPI bus
-    debug_print("Testing connection to CHIP!\n");
+    //debug_print("Testing connection to CHIP!\n");
 
     delay(60000);
     delay(60000);
@@ -725,22 +794,19 @@ int main(void)
     delay(60000);
 
     spi_status = test_wiznet_connection();
-#ifdef KARRI_DEBUG
-    if(spi_status == KARRI_OK)
-    {
-        //Indicate connection to wiznet was OK
-        debug_print("Connection to CHIP OK\n");
-        LED2_ON();
-    }
-    else
+#ifndef KARRI_DEBUG
+    if(spi_status != KARRI_OK)
     {
         //Indicate connection to wiznet was NOK
-        debug_print("Connection to CHIP failed! CRITICAL FAILURE!\n");
-        debug_print("ERROR!! LOOPING FOREVER! CHECK SPI CONNECTION TO ETH CHIP!\n");
+        //debug_print("Connection to CHIP failed!\n");
         LED3_ON();
         while(1);
     }
 #endif //KARRI_DEBUG
+    //Indicate connection to wiznet was OK
+    debug_print("Connection to CHIP OK\n");
+    LED1_ON();
+
 #else //SPI_DEBUG
     _nop();
 #endif //SPI_DEBUG
@@ -748,24 +814,25 @@ int main(void)
     //Init ETH
     init_wiznet();
 
+    LED1_OFF();
 #ifdef KARRI_DEBUG
     debug_print("Went through CHIP init, entering main state machine!\n");
 #endif
 
-    BYTE spi_rx_byte = 0;
+    BYTE spi_rx_byte                          = 0;
 
-    unsigned int rx_data_size = 0;
-#if 0
-    unsigned int rx_data_offset = 0;
-    unsigned int rx_data_start_addr = 0;
-    unsigned int rx_sock1_read_pointer = 0;
-    unsigned int rx_upper_size = 0;
+    unsigned int rx_data_size                 = 0;
+#ifdef EXTENDED_FUNCTIONALITY
+    unsigned int rx_data_offset               = 0;
+    unsigned int rx_data_start_addr           = 0;
+    unsigned int rx_sock1_read_pointer        = 0;
+    unsigned int rx_upper_size                = 0;
 #endif
-    unsigned int tx_data_size = 0;
-    unsigned int tx_data_offset = 0;
-    unsigned int tx_data_start_addr = 0;
-    unsigned int tx_sock1_read_pointer = 0;
-    unsigned int tx_upper_size = 0;
+    unsigned int tx_data_size                 = 0;
+    unsigned int tx_data_offset               = 0;
+    unsigned int tx_data_start_addr           = 0;
+    unsigned int tx_sock1_read_pointer        = 0;
+    unsigned int tx_upper_size                = 0;
 
     unsigned short tx_getsize_timeout_counter = 0;
 
@@ -821,6 +888,8 @@ int main(void)
                     g_mainSM_state = 0xFF; //Reset PIC
                 }
 
+                LED2_ON();
+
                 g_mainSM_state = LISTENING;
                 break;
 
@@ -849,20 +918,19 @@ int main(void)
                 rx_data_size |= spi_rx_byte;
 
 
-                if(rx_data_size > 0 && rx_data_size < MAX_RX_SIZE)
+                if(rx_data_size > 0)
                 {
                     g_mainSM_state = REQUEST_RECEIVED;
                 }
                 /*
                  * When working as a server and receiving data from
                  * a client, and the data size is too much for us
-                 * (afterall, we only have 256 bytes of RAM, of which
-                 * we have around 200 free to use), currently, on this MCU
+                 * (afterall, we only have 256 bytes of RAM), currently, on this MCU
                  * and this application, we will just RESET the CHIP and PIC,
                  * and we DULY NOTE THIS IS A SEVERE SECURITY HOLE IN A NORMAL
                  * NETWORK ENVIRONMENT. (but dont give a heck at the moment)
                  */
-                else if(rx_data_size > MAX_RX_SIZE)
+                if(rx_data_size > MAX_RX_SIZE)
                 {
 #ifdef KARRI_DEBUG
                     debug_print("Wiznet RX buffer has overwhelming amount of data!\n");
@@ -892,17 +960,43 @@ int main(void)
                 debug_print("mainSM: case REQUEST_RECEIVED\n");
 #endif
 
+#define KARRI_DEBUG_RX_PATH
+
+#ifdef KARRI_DEBUG_RX_PATH
                 sprintf( int_string, "RX size: %d\n", rx_data_size );
-
                 debug_print(int_string);
+#endif
 
+                LED3_ON();
 
 #ifdef EXTENDED_FUNCTIONALITY
+
                 //Get the read pointer to received data of socket 0
-                spi_rx_byte = wiznet_read(0x04,0x28);
+                spi_rx_byte = wiznet_read(0x0428);
+#ifdef KARRI_DEBUG_RX_PATH
+                {
+                    sprintf( int_string, "spi_rx_byte MSB: %d\n", spi_rx_byte );
+                    debug_print(int_string);
+                }
+#endif
                 rx_sock1_read_pointer = (spi_rx_byte << 8);
-                spi_rx_byte = wiznet_read(0x04,0x29);
+#ifdef KARRI_DEBUG_RX_PATH
+                sprintf( int_string, "RX_ptr1: %d\n", rx_sock1_read_pointer );
+                debug_print(int_string);
+#endif
+                spi_rx_byte = wiznet_read(0x0429);
+#ifdef KARRI_DEBUG_RX_PATH
+                {
+                    sprintf( int_string, "spi_rx_byte LSB: %d\n", spi_rx_byte );
+                    debug_print(int_string);
+                }
+#endif
                 rx_sock1_read_pointer |= spi_rx_byte;
+
+#ifdef KARRI_DEBUG_RX_PATH
+                sprintf( int_string, "RX_ptr2: %d\n", rx_sock1_read_pointer );
+                debug_print(int_string);
+#endif
 
                 rx_data_offset = rx_sock1_read_pointer & g_rx_sock0_mask;
                 rx_data_start_addr = g_rx_sock0_base + rx_data_offset;
@@ -922,11 +1016,22 @@ int main(void)
                 {
                     wiznet_read_bytes(rx_data_start_addr, eth_buff, rx_data_size);
                 }
-
+#ifdef KARRI_DEBUG_RX_PATH
+                sprintf( int_string, "RX_ptr3a: %d\n", rx_sock1_read_pointer );
+                debug_print(int_string);
+#endif
                 //Update RX buff pointer & send command for RECV done
                 rx_sock1_read_pointer += rx_data_size;
-                WIZNET_WRITE(0x0428,(rx_sock1_read_pointer & 0xFF00));
-                WIZNET_WRITE(0x0429,(rx_sock1_read_pointer & 0x00FF));
+                rx_sock1_read_pointer += 31;
+#ifdef KARRI_DEBUG_RX_PATH
+                sprintf( int_string, "RX_ptr3b: %d\n", rx_sock1_read_pointer );
+                debug_print(int_string);
+#endif
+                WIZNET_WRITE(0x0428,((rx_sock1_read_pointer & 0xFF00) >> 8));
+                WIZNET_WRITE(0x0429,( rx_sock1_read_pointer & 0x00FF)      );
+
+                DELAY_BETWEEN_COMMANDS();
+
                 WIZNET_WRITE(0x0403,RECV);
 #endif
                 g_mainSM_state = PARSE_REQUEST;
@@ -937,16 +1042,32 @@ int main(void)
                 debug_print("mainSM: case PARSE_REQUEST\n");
 #endif
 #ifdef EXTENDED_FUNCTIONALITY
-                parse_status = compare_buffers(eth_buff, get_cmd, sizeof(get_cmd));
+
+#ifdef KARRI_DEBUG_RX_PATH
+                debug_print(eth_buff);
+#endif
+
+                parse_status = compare_buffers(eth_buff, get_cmd, rx_data_size, sizeof(get_cmd));
 
                 if(parse_status == KARRI_OK)
                 {
+                    LED4_ON();
                     g_mainSM_state = SEND_RESPONSE;
                 }
                 else
                 {
+                    LED3_OFF();
                     g_mainSM_state = PEER_CONNECTED;
                 }
+
+                { /* clear out the buffer */
+                    int x;
+                    for(x = ETHERNET_BUFF_SIZE; x > 0; x--)
+                    {
+                        eth_buff[x] = 0;
+                    }
+                }
+
 #else
                 g_mainSM_state = SEND_RESPONSE;
 #endif
@@ -958,7 +1079,7 @@ int main(void)
 #ifdef KARRI_DEBUG
                 debug_print("mainSM: case SEND_RESPONSE\n");
 #endif
-#if 1 //send functionality
+#if 0 //send functionality
 
                 //wait for TX reg size availability
                 do {
@@ -993,7 +1114,7 @@ int main(void)
                 //wiznet_write_bytes(tx_data_start_addr, website_template, sizeof(website_template));
                 //move pointer and set over SPI to CHIP
 #else
-                debug_print("SEND_RESPONSE: no implementation, closing socket going back to idle\n");
+                //debug_print("SEND_RESPONSE: no implementation, closing socket going back to idle\n");
                 //This prepares for a reset!
                 WIZNET_WRITE(0x0403,CLOSE);
                 g_mainSM_state = IDLE;//0xFF; //reset PIC
@@ -1007,7 +1128,7 @@ int main(void)
 
 #ifdef KARRI_DEBUG
                 WIZNET_WRITE(REG_MODE,MRREG_SOFT_RESET);
-
+#if 0
                 BYTE blink_count;
                 for(blink_count=0;blink_count<5;blink_count++)
                 {
@@ -1022,6 +1143,7 @@ int main(void)
                     LED4_OFF();
                     delay(5000);//Delay for reset to happen on CHIP before PIC reset
                 }
+#endif
 #endif //KARRI_DEBUG
 
                 WDTCONbits.SWDTEN = 1; //Enable watchdog timer! Let it reset the damn thing!
