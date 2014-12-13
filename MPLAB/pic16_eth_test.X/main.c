@@ -470,6 +470,21 @@ inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int input_
     return KARRI_NOK;
 }
 
+
+/**
+* This function compares the input buffer to a command buffer and tries to find
+* the specified command inside the input buffer (the offset doesn't matter).
+* If there was a match, next task is to find out, starting from the offset of
+* after the basic command, looking through the incoming ethernet buffer and trying
+* to find some specific commands, and returning the result as a PARSE_STATUS enum.
+* @param eth_buff pointer to the input buffer.
+* @param cmd pointer to the command buffer.
+* @param input_size the size of the data in the eth_buff input buffer
+* @param cmd_size the size of the command we are looking for
+* @see compare_buffers()
+* @see main()
+* @return The result of the parsing.
+*/
 inline PARSE_STATUS parse_command(BYTE *eth_buff, BYTE *cmd, unsigned int input_size, unsigned int cmd_size)
 {
     PARSE_STATUS ret = PARSE_NO_MATCH;
