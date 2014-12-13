@@ -227,8 +227,9 @@ typedef enum {
 
 /*static const saves it in the program memory, not RAM*/
 
-static const BYTE get_cmd[] = "GET /index.htm";
+static const BYTE get_cmd[] = "GET /";
 
+#if 0
 static const BYTE website_template[] =
 
 "HTTP/1.1 404 Not Found \
@@ -247,7 +248,7 @@ Content-Type: text/html; charset=iso-8859-1 \
 <address>Apache/2.2.22 (Ubuntu) Server at www.karrikivela.fi Port 80</address> \
 </body></html> \
 ";
-
+#endif
 
 /*Globals*/
 short g_portc = 0;
@@ -364,6 +365,40 @@ int g_mainSM_state = IDLE;
     } while(0)
 
 
+#ifdef UART_DEBUG
+/**
+* This inline function outputs debug messages out of the chip UART bus.
+* @param msg The debug message.
+* @return void
+*/
+inline void debug_print(DEBUG_MSG *msg)
+{
+    int x;
+    for(x=0;x<MAX_UART_PRINT_LENGTH;x++)
+    {
+        if(msg[x] == '\n') //break character
+        {
+            break;
+        }
+
+        while(!TXSTAbits.TRMT);
+
+        TXREG = msg[x];
+    }
+
+    while(!TXSTAbits.TRMT);
+    TXREG = 0x0A;
+    while(!TXSTAbits.TRMT);
+    TXREG = 0x0D;
+
+}
+#else
+inline void debug_print(DEBUG_MSG *msg)
+{
+    _nop();
+}
+#endif //UART_DEBUG
+
 /**
 * This inline function reads a single byte from the chip. This function manages
 * the data transfer over the SPI bus from the chip towards the master.
@@ -397,53 +432,32 @@ wiznet_read(unsigned int addr)
 */
 inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int input_size, unsigned int cmd_size)
 {
-    KARRI_BOOL ret_status = KARRI_NOK;
     int get_cmd_lookup_loop, get_cmd_matching_loop;
     for(get_cmd_lookup_loop = 0; get_cmd_lookup_loop < input_size; get_cmd_lookup_loop++)
     {
         if(eth_buff[get_cmd_lookup_loop] == cmd[0])
+        {
             for(get_cmd_matching_loop = 0; get_cmd_matching_loop < cmd_size; get_cmd_matching_loop++)
+            {
                 if(eth_buff[get_cmd_lookup_loop + get_cmd_matching_loop] != cmd[get_cmd_matching_loop])
                 {
-                    ret_status = KARRI_NOK;
-                    break;
+#if 1
+                    BYTE debug_string[] = "0123";
+                    sprintf( debug_string, "offset fail: %d\n", get_cmd_matching_loop );
+                    debug_print(debug_string);
+#endif
+                    /* No CMD found afterall */
+                    return KARRI_NOK;
                 }
-    }
-
-    return ret_status;
-}
-
-
-
-
-#ifdef UART_DEBUG
-inline void debug_print(DEBUG_MSG *msg)
-{
-    int x;
-    for(x=0;x<MAX_UART_PRINT_LENGTH;x++)
-    {
-        if(msg[x] == '\n') //break character
-        {
-            break;
+            }
+            /* If we get here, it means we got successfully out of the for-loop and found our CMD */
+            return KARRI_OK;
         }
-
-        while(!TXSTAbits.TRMT);
-
-        TXREG = msg[x];
     }
 
-    while(!TXSTAbits.TRMT);
-    TXREG = 0x0A;
-    while(!TXSTAbits.TRMT);
-    TXREG = 0x0D;
-
+    /* If we get here, it means we couldn't find our CMD */
+    return KARRI_NOK;
 }
-#else
-inline void debug_print(DEBUG_MSG *msg)
-{
-    _nop();
-}
-#endif //UART_DEBUG
 
 #if 0
 /**
@@ -572,53 +586,6 @@ short test_wiznet_connection(void)
 }
 
 
-/*
- *
- * Basic Setting
-For the W5100 operation, select and utilize appropriate registers shown below.
-1. Mode Register (MR)
-2. Interrupt Mask Register (IMR)
-3. Retry Time-value Register (RTR)
-4. Retry Count Register (RCR)
-For more information of above registers, refer to the ?Register Descriptions?.
- *
- *
- * Setting network information
-Below register is for basic network configuration information to be configured according to
-the network environment.
-1. Gateway Address Register (GAR)
-2. Source Hardware Address Register (SHAR)
-3. Subnet Mask Register (SUBR)
-4. Source IP Address Register (SIPR)
-The Source Hardware Address Register (SHAR) is the H/W address to be used in MAC layer, and
-can be used with the address that manufacturer has been assigned. The MAC address can be
-assigned from IEEE. For more detail, refer to IEEE homepage.
- *
- *
- * Set socket memory information
-This stage sets the socket tx/rx memory information. The base address and mask address of
-each socket are fixed and saved in this stage.
- *
- Example (abstract):
- {
- RMSR = 0x55; // assign 2K rx memory per socket.
-gS0_RX_BASE = chip_base_address + RX_memory_base_address(0x6000);
-gS0_RX_MASK = 2K ? 1 ; // 0x07FF, for getting offset address within assigned socket 0 RX
-memory.
-gS1_RX_BASE = gS0_BASE + (gS0_MASK + 1);
-gS1_RX_MASK = 2K ? 1 ;
-gS2_RX_BASE = gS1_BASE + (gS1_MASK + 1);
-gS2_RX_MASK = 2K ? 1 ;
-gS3_RX_BASE = gS2_BASE + (gS2_MASK + 1);
-gS3_RX_MASK = 2K ? 1 ;
-TMSR = 0x55; // assign 2K tx memory per socket.
-Same method, set gS0_TX_BASE, gS0_TX_MASK, gS1_TX_BASE, gS1_TX_MASK,
-gS2_TX_BASE, gS2_TX_MASK, gS3_TX_BASE and gS3_TX_MASK.
- }
- *
- *
- *
- */
 void init_wiznet(void)
 {
     /**GENERAL NETWORK STACK CONFIGURATION**/
@@ -933,10 +900,12 @@ LED1_OFF();
                 if(rx_data_size > MAX_RX_SIZE)
                 {
 #ifdef KARRI_DEBUG
-                    debug_print("Wiznet RX buffer has overwhelming amount of data!\n");
+                    debug_print("RX too long, truncating!\n");
+
 #endif
-                    WIZNET_WRITE(0x0403,CLOSE);
-                    g_mainSM_state = 0xFF; //reset PIC
+                    /* If the received data is longer than our receive buffer,
+                     * we'll just truncate the data. */
+                    rx_data_size = MAX_RX_SIZE - 1;
                 }
 
                 DELAY_BETWEEN_COMMANDS();
@@ -972,34 +941,15 @@ LED1_OFF();
 #ifdef EXTENDED_FUNCTIONALITY
 
                 //Get the read pointer to received data of socket 0
-                spi_rx_byte = wiznet_read(0x0428);
-#ifdef KARRI_DEBUG_RX_PATH
-                {
-                    sprintf( int_string, "spi_rx_byte MSB: %d\n", spi_rx_byte );
-                    debug_print(int_string);
-                }
-#endif
-                rx_sock1_read_pointer = (spi_rx_byte << 8);
-#ifdef KARRI_DEBUG_RX_PATH
-                sprintf( int_string, "RX_ptr1: %d\n", rx_sock1_read_pointer );
-                debug_print(int_string);
-#endif
-                spi_rx_byte = wiznet_read(0x0429);
-#ifdef KARRI_DEBUG_RX_PATH
-                {
-                    sprintf( int_string, "spi_rx_byte LSB: %d\n", spi_rx_byte );
-                    debug_print(int_string);
-                }
-#endif
+                spi_rx_byte            = wiznet_read(0x0428);
+                rx_sock1_read_pointer  = (spi_rx_byte << 8);
+
+                spi_rx_byte            = wiznet_read(0x0429);
                 rx_sock1_read_pointer |= spi_rx_byte;
+                
 
-#ifdef KARRI_DEBUG_RX_PATH
-                sprintf( int_string, "RX_ptr2: %d\n", rx_sock1_read_pointer );
-                debug_print(int_string);
-#endif
-
-                rx_data_offset = rx_sock1_read_pointer & g_rx_sock0_mask;
-                rx_data_start_addr = g_rx_sock0_base + rx_data_offset;
+                rx_data_offset         = rx_sock1_read_pointer & g_rx_sock0_mask;
+                rx_data_start_addr     = g_rx_sock0_base + rx_data_offset;
 
                 if((rx_data_size + rx_data_offset) > (g_rx_sock0_mask + 1))
                 {//buffer wrap-around occured
@@ -1016,17 +966,10 @@ LED1_OFF();
                 {
                     wiznet_read_bytes(rx_data_start_addr, eth_buff, rx_data_size);
                 }
-#ifdef KARRI_DEBUG_RX_PATH
-                sprintf( int_string, "RX_ptr3a: %d\n", rx_sock1_read_pointer );
-                debug_print(int_string);
-#endif
+
                 //Update RX buff pointer & send command for RECV done
                 rx_sock1_read_pointer += rx_data_size;
-                rx_sock1_read_pointer += 31;
-#ifdef KARRI_DEBUG_RX_PATH
-                sprintf( int_string, "RX_ptr3b: %d\n", rx_sock1_read_pointer );
-                debug_print(int_string);
-#endif
+
                 WIZNET_WRITE(0x0428,((rx_sock1_read_pointer & 0xFF00) >> 8));
                 WIZNET_WRITE(0x0429,( rx_sock1_read_pointer & 0x00FF)      );
 
@@ -1046,11 +989,15 @@ LED1_OFF();
 #ifdef KARRI_DEBUG_RX_PATH
                 debug_print(eth_buff);
 #endif
+                DELAY_BETWEEN_COMMANDS();
 
-                parse_status = compare_buffers(eth_buff, get_cmd, rx_data_size, sizeof(get_cmd));
+                parse_status = compare_buffers(eth_buff, get_cmd, rx_data_size, (sizeof(get_cmd) - 1) ); /* We do minus 1 for the size because of the null character */
 
                 if(parse_status == KARRI_OK)
                 {
+#ifdef KARRI_DEBUG_RX_PATH
+                    debug_print("We got CMD!/n");
+#endif
                     LED4_ON();
                     g_mainSM_state = SEND_RESPONSE;
                 }
@@ -1122,28 +1069,12 @@ LED1_OFF();
                 break;
                 
             default:/**ENDING UP HERE CAUSES A SOFTWARE RESET!**/
-#ifdef KARRI_DEBUG
+#if 1 //def KARRI_DEBUG
                 debug_print("WARNING!! Doing a soft *RESET* to PIC soon!\n");
 #endif
 
 #ifdef KARRI_DEBUG
                 WIZNET_WRITE(REG_MODE,MRREG_SOFT_RESET);
-#if 0
-                BYTE blink_count;
-                for(blink_count=0;blink_count<5;blink_count++)
-                {
-                    LED1_ON();
-                    LED2_ON();
-                    LED3_ON();
-                    LED4_ON();
-                    delay(5000);
-                    LED1_OFF();
-                    LED2_OFF();
-                    LED3_OFF();
-                    LED4_OFF();
-                    delay(5000);//Delay for reset to happen on CHIP before PIC reset
-                }
-#endif
 #endif //KARRI_DEBUG
 
                 WDTCONbits.SWDTEN = 1; //Enable watchdog timer! Let it reset the damn thing!
