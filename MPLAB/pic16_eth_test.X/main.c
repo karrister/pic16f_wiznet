@@ -223,6 +223,15 @@ typedef enum {
             SEND_RESPONSE
 } mainserverSM;
 
+typedef enum {
+            PARSE_NO_MATCH,
+            PARSE_MATCH,
+            PARSE_LED1,
+            PARSE_LED2,
+            PARSE_LED3,
+            PARSE_LED4,
+} PARSE_STATUS;
+
 /*Static */
 
 /*static const saves it in the program memory, not RAM*/
@@ -427,14 +436,16 @@ wiznet_read(unsigned int addr)
 * @param cmd pointer to the command buffer.
 * @param input_size the size of the data in the eth_buff input buffer
 * @param cmd_size the size of the command we are looking for
+* @param buffer_offset pointer to uint where the function will save the offset in the input buffer where the match was found
 * @see main()
 * @return The boolean result if the specified command was found inside the input buffer.
 */
-inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int input_size, unsigned int cmd_size)
+inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int input_size, unsigned int cmd_size, unsigned int *buffer_offset)
 {
     int get_cmd_lookup_loop, get_cmd_matching_loop;
     for(get_cmd_lookup_loop = 0; get_cmd_lookup_loop < input_size; get_cmd_lookup_loop++)
     {
+        *buffer_offset = get_cmd_lookup_loop;
         if(eth_buff[get_cmd_lookup_loop] == cmd[0])
         {
             for(get_cmd_matching_loop = 0; get_cmd_matching_loop < cmd_size; get_cmd_matching_loop++)
@@ -457,6 +468,46 @@ inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int input_
 
     /* If we get here, it means we couldn't find our CMD */
     return KARRI_NOK;
+}
+
+inline PARSE_STATUS parse_command(BYTE *eth_buff, BYTE *cmd, unsigned int input_size, unsigned int cmd_size)
+{
+    PARSE_STATUS ret = PARSE_NO_MATCH;
+    BYTE        *command_buffer;
+    unsigned int buffer_offset;
+    if(!compare_buffers(eth_buff, cmd, input_size, cmd_size, &buffer_offset))
+    {
+        /* No match was found, return immediately */
+        return PARSE_NO_MATCH;
+    }
+
+    /* Let's make the buffer to point to local pointer from the wanted offset, after the initial command */
+    command_buffer = eth_buff + buffer_offset + cmd_size;
+
+    /* Get ready... Here is the huge parser! */
+    if(command_buffer[0] == 'l' &&
+       command_buffer[1] == 'e' &&
+       command_buffer[2] == 'd')
+    {
+        if(command_buffer[3] == '1')
+        {
+            ret = PARSE_LED1;
+        }
+        if(command_buffer[3] == '2')
+        {
+            ret = PARSE_LED2;
+        }
+        if(command_buffer[3] == '3')
+        {
+            ret = PARSE_LED3;
+        }
+        if(command_buffer[3] == '4')
+        {
+            ret = PARSE_LED4;
+        }
+    }
+    
+    return ret;
 }
 
 #if 0
@@ -803,7 +854,7 @@ LED1_OFF();
 
     unsigned short tx_getsize_timeout_counter = 0;
 
-    KARRI_BOOL parse_status = KARRI_NOK;
+    PARSE_STATUS parse_status = PARSE_NO_MATCH;
 
     unsigned char print[] = "rx size: xxxx\n";
 
@@ -991,14 +1042,30 @@ LED1_OFF();
 #endif
                 DELAY_BETWEEN_COMMANDS();
 
-                parse_status = compare_buffers(eth_buff, get_cmd, rx_data_size, (sizeof(get_cmd) - 1) ); /* We do minus 1 for the size because of the null character */
+                parse_status = parse_command(eth_buff, get_cmd, rx_data_size, (sizeof(get_cmd) - 1) ); /* We do minus 1 for the size because of the null character */
 
-                if(parse_status == KARRI_OK)
+                if(parse_status >= PARSE_MATCH)
                 {
 #ifdef KARRI_DEBUG_RX_PATH
                     debug_print("We got CMD!/n");
 #endif
-                    LED4_ON();
+
+                    switch(parse_status)
+                    {
+                        case PARSE_LED1:
+                            LED1_ON();
+                            break;
+                        case PARSE_LED2:
+                            LED2_ON();
+                            break;
+                        case PARSE_LED3:
+                            LED3_ON();
+                            break;
+                        case PARSE_LED4:
+                            LED4_ON();
+                            break;
+                    }
+
                     g_mainSM_state = SEND_RESPONSE;
                 }
                 else
