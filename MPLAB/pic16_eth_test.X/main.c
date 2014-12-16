@@ -186,8 +186,6 @@ typedef unsigned char DEBUG_MSG;
 #define SOCK_REG_RX_READ_POINTER1    0x0029
 
 //Macros for getting the end address by socket #
-
-//MAKE SURE THIS ONE DOES NOT TAKE UP TOO MUCH OF PRECIOUS DATA MEM!!
 inline unsigned int
 get_sock_base_addr_by_sock_num(unsigned int sock)
 {
@@ -211,7 +209,6 @@ get_sock_base_addr_by_sock_num(unsigned int sock)
 /*reg addr end*/
 
 typedef unsigned char BYTE;
-
 typedef BYTE KARRI_BOOL;
 
 typedef enum {
@@ -226,10 +223,10 @@ typedef enum {
 typedef enum {
             PARSE_NO_MATCH,
             PARSE_MATCH,
-            PARSE_LED1,
-            PARSE_LED2,
-            PARSE_LED3,
-            PARSE_LED4,
+            TOGGLE_LED1,
+            TOGGLE_LED2,
+            TOGGLE_LED3,
+            TOGGLE_LED4,
 } PARSE_STATUS;
 
 /*Static */
@@ -238,26 +235,48 @@ typedef enum {
 
 static const BYTE get_cmd[] = "GET /";
 
-#if 0
-static const BYTE website_template[] =
-
-"HTTP/1.1 404 Not Found \
-Date: Sat, 10 May 2014 08:54:23 GMT \
-Server: Apache/2.2.22 (Ubuntu) \
-Vary: Accept-Encoding \
-Content-Length: 291 \
-Content-Type: text/html; charset=iso-8859-1 \
-<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\"> \
-<html><head> \
-<title>404 Not Found</title> \
-</head><body> \
-<h1>Not Found</h1> \
-<p>The requested URL /index.htm was not found on this server.</p> \
-<hr> \
-<address>Apache/2.2.22 (Ubuntu) Server at www.karrikivela.fi Port 80</address> \
-</body></html> \
+/* This is the template for the website published on our PIC-server */
+static const BYTE website_body[] =
+" \
+<HEAD> \
+<TITLE>PIC16-webserver</TITLE> \
+</HEAD> \
+<BODY> \
+<H2>Welcome to pic16server. Toggle LEDs: \
+<H1> \
+<a href=\"toggle_led1\">LED1</a> \
+<a href=\"toggle_led2\">LED2</a> \
+<a href=\"toggle_led3\">LED3</a> \
+<a href=\"toggle_led4\">LED4</a> \
+<br><br> \
+<H2>Status:<P> \
+<H1> \
 ";
-#endif
+
+/*
+<HEAD>
+<TITLE>PIC18-webserver</TITLE>
+</HEAD>
+<BODY>
+<H2>Welcome to picserver. Toggle LEDs:
+<H1>
+<a href="toggle_led1">LED1</a>
+<a href="toggle_led2">LED2</a>
+<a href="toggle_led3">LED3</a>
+<a href="toggle_led4">LED4</a>
+<br><br>
+<H2>Status:<P>
+<H1>
+LED1 <font color='green'>ON</font>
+LED2 <font color='green'>ON</font>
+LED3 <font color='red'>OFF</font>
+LED4 <font color='green'>ON</font>
+</body>
+ */
+#define DYNAMIC_HTML_LINE_MAX_SIZE 35 //length of the text: LED1 <font color='green'>ON</font>
+
+static const BYTE website_body_end[] = "</BODY>";
+
 
 /*Globals*/
 short g_portc = 0;
@@ -326,6 +345,38 @@ int g_mainSM_state = IDLE;
     g_portc &= 0xF7; \
     PORTC = g_portc;\
   } while (0)
+
+#define LED1_TOGGLE() \
+  do { \
+    g_portc ^= 0x01; \
+    PORTC = g_portc;\
+  } while (0)
+
+#define LED2_TOGGLE() \
+  do { \
+    g_portc ^= 0x02; \
+    PORTC = g_portc;\
+  } while (0)
+
+#define LED3_TOGGLE() \
+  do { \
+    g_portc ^= 0x04; \
+    PORTC = g_portc;\
+  } while (0)
+
+#define LED4_TOGGLE() \
+  do { \
+    g_portc ^= 0x08; \
+    PORTC = g_portc;\
+  } while (0)
+
+/* Read the status of the LEDs */
+#define LED1_STATUS() (PORTC && 0x01)
+#define LED2_STATUS() (PORTC && 0x02)
+#define LED3_STATUS() (PORTC && 0x04)
+#define LED4_STATUS() (PORTC && 0x08)
+
+
 
 #define RESET_LOW() \
   do { \
@@ -452,11 +503,6 @@ inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int input_
             {
                 if(eth_buff[get_cmd_lookup_loop + get_cmd_matching_loop] != cmd[get_cmd_matching_loop])
                 {
-#if 1
-                    BYTE debug_string[] = "0123";
-                    sprintf( debug_string, "offset fail: %d\n", get_cmd_matching_loop );
-                    debug_print(debug_string);
-#endif
                     /* No CMD found afterall */
                     return KARRI_NOK;
                 }
@@ -500,78 +546,39 @@ inline PARSE_STATUS parse_command(BYTE *eth_buff, BYTE *cmd, unsigned int input_
     command_buffer = eth_buff + buffer_offset + cmd_size;
 
     /* Get ready... Here is the huge parser! */
-    if(command_buffer[0] == 'l' &&
-       command_buffer[1] == 'e' &&
-       command_buffer[2] == 'd')
+    if(command_buffer[0] == 't' &&
+       command_buffer[1] == 'o' &&
+       command_buffer[2] == 'g' &&
+       command_buffer[3] == 'g' &&
+       command_buffer[4] == 'l' &&
+       command_buffer[5] == 'e' &&
+       command_buffer[6] == '_' &&
+       command_buffer[7] == 'l' &&
+       command_buffer[8] == 'e' &&
+       command_buffer[9] == 'd')
     {
-        if(command_buffer[3] == '1')
+        switch(command_buffer[10])
         {
-            ret = PARSE_LED1;
-        }
-        if(command_buffer[3] == '2')
-        {
-            ret = PARSE_LED2;
-        }
-        if(command_buffer[3] == '3')
-        {
-            ret = PARSE_LED3;
-        }
-        if(command_buffer[3] == '4')
-        {
-            ret = PARSE_LED4;
+            case '1':
+                ret = TOGGLE_LED1;
+                break;
+            case '2':
+                ret = TOGGLE_LED2;
+                break;
+            case '3':
+                ret = TOGGLE_LED3;
+                break;
+            case '4':
+                ret = TOGGLE_LED4;
+                break;
+            default:
+                ret = PARSE_NO_MATCH;
+                break;
         }
     }
     
     return ret;
 }
-
-#if 0
-/**
-* This inline function makes hexa values, and prints the from the debug UART in
-* the correct way. The current implementation assumes that the input
-* to print are only one byte.
-* @param msg the pointer to the buffer with the message to convert
-* @param offset the offset into the buffer at where the value to convert is found
-* @see main()
-* @see debug_print()
-* @return void
-*/
-inline void debug_print_hexa_to_string(DEBUG_MSG *msg, unsigned short offset)
-{
-    unsigned char  msb, lsb;
-    unsigned short actual_msg_shadow_int[3];
-
-    msb = ((msg[offset]   & 0xF0) >> 4);
-    lsb = ( msg[offset+1] & 0x0F      );
-
-    if(lsb < 0x0a)
-    {
-        actual_msg_shadow_int[0]  = lsb;
-    }
-    else
-    {
-        actual_msg_shadow_int[1]  = 1;
-        actual_msg_shadow_int[0]  = (lsb - 10);
-    }
-
-    if(msb < 0x0a)
-    {
-        actual_msg_shadow_int[1] += msb;
-    }
-    else
-    {
-        actual_msg_shadow_int[2]  = 1;
-        actual_msg_shadow_int[1] += (msb - 10);
-    }
-
-    msg[offset - 1] = (actual_msg_shadow_int[0] + 0x30);
-    msg[offset]     = (actual_msg_shadow_int[1] + 0x30);
-    msg[offset + 1] = (actual_msg_shadow_int[2] + 0x30);
-
-    debug_print((DEBUG_MSG *)msg);
-}
-#endif //if 0
-
 
 
 /*Configuration bits*/
@@ -800,10 +807,8 @@ int main(void)
 {
     short spi_status = KARRI_NOK;
     dev_init();
-LED1_ON();
     //Sleep after init (needed?)
     delay(60000);
-LED1_OFF();
     delay(60000);
     delay(60000);
     delay(60000);
@@ -832,23 +837,24 @@ LED1_OFF();
     {
         //Indicate connection to wiznet was NOK
         //debug_print("Connection to CHIP failed!\n");
-        LED3_ON();
+        //LED3_ON();
         while(1);
     }
 #endif //KARRI_DEBUG
     //Indicate connection to wiznet was OK
+#ifdef KARRI_DEBUG
     debug_print("Connection to CHIP OK\n");
     LED1_ON();
+#endif
 
 #else //SPI_DEBUG
     _nop();
 #endif //SPI_DEBUG
-#if 1 //karri comment out rest of the app
     //Init ETH
     init_wiznet();
 
-    LED1_OFF();
 #ifdef KARRI_DEBUG
+    LED1_OFF();
     debug_print("Went through CHIP init, entering main state machine!\n");
 #endif
 
@@ -920,8 +926,6 @@ LED1_OFF();
                     WIZNET_WRITE(0x0403,CLOSE);
                     g_mainSM_state = 0xFF; //Reset PIC
                 }
-
-                LED2_ON();
 
                 g_mainSM_state = LISTENING;
                 break;
@@ -1002,8 +1006,6 @@ LED1_OFF();
                 debug_print(int_string);
 #endif
 
-                LED3_ON();
-
 #ifdef EXTENDED_FUNCTIONALITY
 
                 //Get the read pointer to received data of socket 0
@@ -1050,9 +1052,8 @@ LED1_OFF();
 #ifdef KARRI_DEBUG
                 debug_print("mainSM: case PARSE_REQUEST\n");
 #endif
-#ifdef EXTENDED_FUNCTIONALITY
 
-#ifdef KARRI_DEBUG_RX_PATH
+#ifdef KARRI_DEBUG
                 debug_print(eth_buff);
 #endif
                 DELAY_BETWEEN_COMMANDS();
@@ -1061,32 +1062,21 @@ LED1_OFF();
 
                 if(parse_status >= PARSE_MATCH)
                 {
-#ifdef KARRI_DEBUG_RX_PATH
-                    debug_print("We got CMD!/n");
-#endif
-
                     switch(parse_status)
                     {
-                        case PARSE_LED1:
-                            LED1_ON();
+                        case TOGGLE_LED1:
+                            LED1_TOGGLE();
                             break;
-                        case PARSE_LED2:
-                            LED2_ON();
+                        case TOGGLE_LED2:
+                            LED2_TOGGLE();
                             break;
-                        case PARSE_LED3:
-                            LED3_ON();
+                        case TOGGLE_LED3:
+                            LED3_TOGGLE();
                             break;
-                        case PARSE_LED4:
-                            LED4_ON();
+                        case TOGGLE_LED4:
+                            LED4_TOGGLE();
                             break;
-                    }
-
-                    g_mainSM_state = SEND_RESPONSE;
-                }
-                else
-                {
-                    LED3_OFF();
-                    g_mainSM_state = PEER_CONNECTED;
+                    } 
                 }
 
                 { /* clear out the buffer */
@@ -1096,21 +1086,16 @@ LED1_OFF();
                         eth_buff[x] = 0;
                     }
                 }
-
-#else
                 g_mainSM_state = SEND_RESPONSE;
-#endif
-
-
                 break;
-
+                
             case SEND_RESPONSE://send the web site as a response
 #ifdef KARRI_DEBUG
                 debug_print("mainSM: case SEND_RESPONSE\n");
 #endif
 #if 0 //send functionality
 
-                //wait for TX reg size availability
+                //wait for TX buffer size availability
                 do {
                     tx_getsize_timeout_counter++;
                     delay(600);
@@ -1126,7 +1111,7 @@ LED1_OFF();
                         g_mainSM_state = IDLE;
                         break;
                     }
-                } while(tx_data_size < sizeof(website_template));
+                } while(tx_data_size < (sizeof(website_body) + sizeof(website_body_end) + DYNAMIC_HTML_LINE_MAX_SIZE) );
 
 
 
@@ -1140,18 +1125,19 @@ LED1_OFF();
                 tx_data_start_addr = g_rx_sock0_base + tx_data_offset;
 
 
-                //wiznet_write_bytes(tx_data_start_addr, website_template, sizeof(website_template));
+                wiznet_write_bytes(tx_data_start_addr, website_template_body, sizeof(website_template_body));
                 //move pointer and set over SPI to CHIP
 #else
                 //debug_print("SEND_RESPONSE: no implementation, closing socket going back to idle\n");
-                //This prepares for a reset!
                 WIZNET_WRITE(0x0403,CLOSE);
-                g_mainSM_state = IDLE;//0xFF; //reset PIC
+                g_mainSM_state = IDLE;
 #endif
+                WIZNET_WRITE(0x0403,CLOSE);
+                g_mainSM_state = IDLE;
                 break;
                 
             default:/**ENDING UP HERE CAUSES A SOFTWARE RESET!**/
-#if 1 //def KARRI_DEBUG
+#ifdef KARRI_DEBUG
                 debug_print("WARNING!! Doing a soft *RESET* to PIC soon!\n");
 #endif
 
@@ -1170,7 +1156,7 @@ LED1_OFF();
         DELAY_BETWEEN_COMMANDS();
         DELAY_BETWEEN_COMMANDS();
     }
-#endif //karri comment out the rest of the app
+
 #ifdef KARRI_DEBUG
     //Indicate firmware finished
     LED4_ON();
