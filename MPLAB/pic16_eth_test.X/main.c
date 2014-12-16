@@ -516,6 +516,15 @@ inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int input_
     return KARRI_NOK;
 }
 
+inline void zeromem(BYTE *memory, unsigned int size)
+{ /* clear out the buffer */
+    unsigned int x;
+    for(x = size; x > 0; x--)
+    {
+        memory[x] = 0;
+    }
+}
+
 
 /**
 * This function compares the input buffer to a command buffer and tries to find
@@ -861,16 +870,16 @@ int main(void)
     BYTE spi_rx_byte                          = 0;
 
     unsigned int rx_data_size                 = 0;
-#ifdef EXTENDED_FUNCTIONALITY
+
     unsigned int rx_data_offset               = 0;
     unsigned int rx_data_start_addr           = 0;
     unsigned int rx_sock1_read_pointer        = 0;
     unsigned int rx_upper_size                = 0;
-#endif
+
     unsigned int tx_data_size                 = 0;
     unsigned int tx_data_offset               = 0;
     unsigned int tx_data_start_addr           = 0;
-    unsigned int tx_sock1_read_pointer        = 0;
+    unsigned int tx_sock1_write_pointer       = 0;
     unsigned int tx_upper_size                = 0;
 
     unsigned short tx_getsize_timeout_counter = 0;
@@ -971,7 +980,6 @@ int main(void)
                 {
 #ifdef KARRI_DEBUG
                     debug_print("RX too long, truncating!\n");
-
 #endif
                     /* If the received data is longer than our receive buffer,
                      * we'll just truncate the data. */
@@ -1014,6 +1022,7 @@ int main(void)
 
                 spi_rx_byte            = wiznet_read(0x0429);
                 rx_sock1_read_pointer |= spi_rx_byte;
+
                 
 
                 rx_data_offset         = rx_sock1_read_pointer & g_rx_sock0_mask;
@@ -1079,13 +1088,8 @@ int main(void)
                     } 
                 }
 
-                { /* clear out the buffer */
-                    int x;
-                    for(x = ETHERNET_BUFF_SIZE; x > 0; x--)
-                    {
-                        eth_buff[x] = 0;
-                    }
-                }
+                zeromem(eth_buff, ETHERNET_BUFF_SIZE);
+                
                 g_mainSM_state = SEND_RESPONSE;
                 break;
                 
@@ -1093,8 +1097,6 @@ int main(void)
 #ifdef KARRI_DEBUG
                 debug_print("mainSM: case SEND_RESPONSE\n");
 #endif
-#if 0 //send functionality
-
                 //wait for TX buffer size availability
                 do {
                     tx_getsize_timeout_counter++;
@@ -1117,21 +1119,58 @@ int main(void)
 
                 //Get the write pointer
                 spi_rx_byte = wiznet_read(0x0424);
-                tx_sock1_read_pointer = (unsigned int)(spi_rx_byte << 8);
+                tx_sock1_write_pointer = (spi_rx_byte << 8);
                 spi_rx_byte = wiznet_read(0x0425);
-                tx_sock1_read_pointer |= spi_rx_byte;
+                tx_sock1_write_pointer |= spi_rx_byte;
 
-                tx_data_offset = tx_sock1_read_pointer & g_rx_sock0_mask;
+                tx_data_offset = tx_sock1_write_pointer & g_tx_sock0_mask;
                 tx_data_start_addr = g_rx_sock0_base + tx_data_offset;
 
+                { /* Send the website */
+                    BYTE temp_dynamic_line_buff[DYNAMIC_HTML_LINE_MAX_SIZE];
+                    zeromem(temp_dynamic_line_buff, sizeof(temp_dynamic_line_buff));
 
-                wiznet_write_bytes(tx_data_start_addr, website_template_body, sizeof(website_template_body));
-                //move pointer and set over SPI to CHIP
-#else
-                //debug_print("SEND_RESPONSE: no implementation, closing socket going back to idle\n");
-                WIZNET_WRITE(0x0403,CLOSE);
-                g_mainSM_state = IDLE;
-#endif
+                    /*Test characters*/
+                    temp_dynamic_line_buff[5] = 'K';
+                    temp_dynamic_line_buff[6] = 'O';
+                    temp_dynamic_line_buff[7] = 'R';
+                    temp_dynamic_line_buff[8] = 'S';
+                    temp_dynamic_line_buff[9] = 'O';
+                    /**/
+
+                    wiznet_write_bytes(tx_data_start_addr,
+                                       website_body,
+                                       sizeof(website_body));
+                    tx_data_start_addr += sizeof(website_body);
+                    wiznet_write_bytes(tx_data_start_addr,
+                                       temp_dynamic_line_buff,
+                                       sizeof(temp_dynamic_line_buff));
+                    tx_data_start_addr += sizeof(temp_dynamic_line_buff);
+                    wiznet_write_bytes(tx_data_start_addr + sizeof(website_body) + sizeof(temp_dynamic_line_buff),
+                                       website_body_end,
+                                       sizeof(website_body_end));
+                    tx_data_start_addr += sizeof(website_body_end);
+                    
+                }
+                tx_sock1_write_pointer = tx_data_start_addr;
+
+                WIZNET_WRITE(0x0424,((tx_sock1_write_pointer & 0xFF00) >> 8));
+                WIZNET_WRITE(0x0425,( tx_sock1_write_pointer & 0x00FF)      );
+
+                DELAY_BETWEEN_COMMANDS();
+
+                WIZNET_WRITE(0x0403,SEND);
+
+                DELAY_BETWEEN_COMMANDS();
+                DELAY_BETWEEN_COMMANDS();
+                DELAY_BETWEEN_COMMANDS();
+                DELAY_BETWEEN_COMMANDS();
+                DELAY_BETWEEN_COMMANDS();
+                DELAY_BETWEEN_COMMANDS();
+                DELAY_BETWEEN_COMMANDS();
+
+                debug_print("Sent! \n");
+
                 WIZNET_WRITE(0x0403,CLOSE);
                 g_mainSM_state = IDLE;
                 break;
