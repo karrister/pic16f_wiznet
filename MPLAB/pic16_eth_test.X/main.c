@@ -428,7 +428,8 @@ int g_mainSM_state = IDLE;
 #ifdef UART_DEBUG
 /**
 * This inline function outputs debug messages out of the chip UART bus.
-* @param msg The debug message.
+* @param msg The debug message. IMPORTANT: The last char needs to be newline,
+*            otherwise the function will block forever.
 * @return void
 */
 inline void debug_print(DEBUG_MSG *msg)
@@ -806,6 +807,9 @@ void dev_init(void)
     RESET_LOW();
     RESET_HIGH();
 
+    delay(60000);
+    delay(60000);
+
     /*This is for some reason important!*/
     CS_ASSERT();
     CS_DEASSERT();
@@ -897,14 +901,20 @@ int main(void)
     //Get sock0 base address for all the subsequent calls
     sock0_base_addr = get_sock_base_addr_by_sock_num(SOCK0);
 
+//#define KARRI_DEBUG_2
+
     while(1)
     {
         switch(g_mainSM_state)
         {
             case IDLE:
+#ifdef KARRI_DEBUG_2
+debug_print("...idle...\n");
+#endif
 #ifdef KARRI_DEBUG
                 debug_print("mainSM: case IDLE\n");
 #endif
+                LED1_ON();
                 /**SET SERVER SOCKET**/
                 //Set TCP mode
                 WIZNET_WRITE(GET_SOCK_HW_ADDR_FROM_OFFSET(sock0_base_addr, SOCK_REG_MODE),0x01);
@@ -940,6 +950,9 @@ int main(void)
                 break;
 
             case LISTENING:
+#ifdef KARRI_DEBUG_2
+debug_print("...listening...\n");
+#endif
 #ifdef KARRI_DEBUG
                 debug_print("mainSM: case LISTENING\n");
 #endif
@@ -949,14 +962,19 @@ int main(void)
 
                 if(spi_rx_byte == SOCK_ESTABLISHED)
                 {
-                    g_mainSM_state = PEER_CONNECTED;
+                    g_mainSM_state = SEND_RESPONSE;//PEER_CONNECTED;
                 }
                 break;
 
             case PEER_CONNECTED:
+#ifdef KARRI_DEBUG_2
+debug_print("peer connected\n");
+#endif
 #ifdef KARRI_DEBUG
                 debug_print("mainSM: case PEER_CONNECTED\n");
 #endif
+                LED1_OFF();
+
                 //Get the size of received data size of socket 0
                 spi_rx_byte = wiznet_read(0x0426);
                 rx_data_size = (unsigned int)(spi_rx_byte << 8);
@@ -1003,11 +1021,15 @@ int main(void)
                 break;
 
             case REQUEST_RECEIVED:
+#ifdef KARRI_DEBUG_2
+debug_print("request received\n");
+#endif
+
 #ifdef KARRI_DEBUG
                 debug_print("mainSM: case REQUEST_RECEIVED\n");
 #endif
 
-#define KARRI_DEBUG_RX_PATH
+//#define KARRI_DEBUG_RX_PATH
 
 #ifdef KARRI_DEBUG_RX_PATH
                 sprintf( int_string, "RX size: %d\n", rx_data_size );
@@ -1052,7 +1074,7 @@ int main(void)
 
                 DELAY_BETWEEN_COMMANDS();
 
-                WIZNET_WRITE(0x0403,RECV);
+                WIZNET_WRITE(0x0401,RECV);
 #endif
                 g_mainSM_state = PARSE_REQUEST;
                 break;
@@ -1097,6 +1119,22 @@ int main(void)
 #ifdef KARRI_DEBUG
                 debug_print("mainSM: case SEND_RESPONSE\n");
 #endif
+
+                //Check if socket has been closed
+                spi_rx_byte = wiznet_read(0x0403);
+                if(spi_rx_byte != SOCK_ESTABLISHED)
+                {
+#ifdef KARRI_DEBUG
+                    debug_print("Socket status bad!\n");
+#endif
+                    WIZNET_WRITE(0x0401,DISCON);
+                    WIZNET_WRITE(0x0401,CLOSE);
+                    g_mainSM_state = IDLE;
+                    LED4_ON();
+                }
+#ifdef KARRI_DEBUG_2
+debug_print("start send\n");
+#endif
                 //wait for TX buffer size availability
                 do {
                     tx_getsize_timeout_counter++;
@@ -1109,27 +1147,29 @@ int main(void)
 
                     if(TX_GETSIZE_TIMEOUT_THRESHOLD < tx_getsize_timeout_counter)
                     {
-                        WIZNET_WRITE(0x0403,CLOSE);
+                        WIZNET_WRITE(0x0401,CLOSE);
                         g_mainSM_state = IDLE;
                         break;
+                        LED4_ON();
                     }
                 } while(tx_data_size < (sizeof(website_body) + sizeof(website_body_end) + DYNAMIC_HTML_LINE_MAX_SIZE) );
 
 
 
                 //Get the write pointer
-                spi_rx_byte = wiznet_read(0x0424);
-                tx_sock1_write_pointer = (spi_rx_byte << 8);
-                spi_rx_byte = wiznet_read(0x0425);
-                tx_sock1_write_pointer |= spi_rx_byte;
+                spi_rx_byte = wiznet_read(0x0422);//0x0424);
+                tx_sock1_write_pointer = ((spi_rx_byte & 0x00FF) << 8);
+                spi_rx_byte = wiznet_read(0x0423);//0x0425);
+                tx_sock1_write_pointer |= (spi_rx_byte & 0x00FF);
 
                 tx_data_offset = tx_sock1_write_pointer & g_tx_sock0_mask;
-                tx_data_start_addr = g_rx_sock0_base + tx_data_offset;
+                tx_data_start_addr = g_tx_sock0_base + tx_data_offset;
 
                 { /* Send the website */
+
                     BYTE temp_dynamic_line_buff[DYNAMIC_HTML_LINE_MAX_SIZE];
                     zeromem(temp_dynamic_line_buff, sizeof(temp_dynamic_line_buff));
-
+#if 1
                     /*Test characters*/
                     temp_dynamic_line_buff[5] = 'K';
                     temp_dynamic_line_buff[6] = 'O';
@@ -1137,16 +1177,20 @@ int main(void)
                     temp_dynamic_line_buff[8] = 'S';
                     temp_dynamic_line_buff[9] = 'O';
                     /**/
+#endif
 
                     wiznet_write_bytes(tx_data_start_addr,
                                        website_body,
                                        sizeof(website_body));
                     tx_data_start_addr += sizeof(website_body);
+#if 1
                     wiznet_write_bytes(tx_data_start_addr,
                                        temp_dynamic_line_buff,
                                        sizeof(temp_dynamic_line_buff));
                     tx_data_start_addr += sizeof(temp_dynamic_line_buff);
-                    wiznet_write_bytes(tx_data_start_addr + sizeof(website_body) + sizeof(temp_dynamic_line_buff),
+#endif
+
+                    wiznet_write_bytes(tx_data_start_addr/* + sizeof(website_body) + sizeof(temp_dynamic_line_buff) */,
                                        website_body_end,
                                        sizeof(website_body_end));
                     tx_data_start_addr += sizeof(website_body_end);
@@ -1154,24 +1198,26 @@ int main(void)
                 }
                 tx_sock1_write_pointer = tx_data_start_addr;
 
-                WIZNET_WRITE(0x0424,((tx_sock1_write_pointer & 0xFF00) >> 8));
-                WIZNET_WRITE(0x0425,( tx_sock1_write_pointer & 0x00FF)      );
+                WIZNET_WRITE(0x0422,((tx_sock1_write_pointer & 0xFF00) >> 8)); //WIZNET_WRITE(0x0424,((tx_sock1_write_pointer & 0xFF00) >> 8));
+                WIZNET_WRITE(0x0423,( tx_sock1_write_pointer & 0x00FF)      ); //WIZNET_WRITE(0x0425,( tx_sock1_write_pointer & 0x00FF)      );
 
                 DELAY_BETWEEN_COMMANDS();
 
-                WIZNET_WRITE(0x0403,SEND);
+                WIZNET_WRITE(0x0401,SEND);
 
-                DELAY_BETWEEN_COMMANDS();
-                DELAY_BETWEEN_COMMANDS();
-                DELAY_BETWEEN_COMMANDS();
-                DELAY_BETWEEN_COMMANDS();
-                DELAY_BETWEEN_COMMANDS();
-                DELAY_BETWEEN_COMMANDS();
-                DELAY_BETWEEN_COMMANDS();
+                debug_print("Sending... \n");
+                /* Block while chip is sending */
+                do {
+                    spi_rx_byte = wiznet_read(0x0401);
+                } while(spi_rx_byte);
 
                 debug_print("Sent! \n");
 
-                WIZNET_WRITE(0x0403,CLOSE);
+                WIZNET_WRITE(0x0401,DISCON);
+                
+                DELAY_BETWEEN_COMMANDS();
+
+                WIZNET_WRITE(0x0401,CLOSE);
                 g_mainSM_state = IDLE;
                 break;
                 
@@ -1179,11 +1225,6 @@ int main(void)
 #ifdef KARRI_DEBUG
                 debug_print("WARNING!! Doing a soft *RESET* to PIC soon!\n");
 #endif
-
-#ifdef KARRI_DEBUG
-                WIZNET_WRITE(REG_MODE,MRREG_SOFT_RESET);
-#endif //KARRI_DEBUG
-
                 WDTCONbits.SWDTEN = 1; //Enable watchdog timer! Let it reset the damn thing!
 #ifdef KARRI_DEBUG
                 debug_print("Watchdog starts kicking, we shall RESET immediately!\n");
