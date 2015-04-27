@@ -1157,9 +1157,9 @@ debug_print("start send\n");
 
 
                 //Get the write pointer
-                spi_rx_byte = wiznet_read(0x0422);//0x0424);
+                spi_rx_byte = wiznet_read(0x0424);
                 tx_sock1_write_pointer = ((spi_rx_byte & 0x00FF) << 8);
-                spi_rx_byte = wiznet_read(0x0423);//0x0425);
+                spi_rx_byte = wiznet_read(0x0425);
                 tx_sock1_write_pointer |= (spi_rx_byte & 0x00FF);
 
                 tx_data_offset = tx_sock1_write_pointer & g_tx_sock0_mask;
@@ -1190,16 +1190,18 @@ debug_print("start send\n");
                     tx_data_start_addr += sizeof(temp_dynamic_line_buff);
 #endif
 
-                    wiznet_write_bytes(tx_data_start_addr/* + sizeof(website_body) + sizeof(temp_dynamic_line_buff) */,
+                    wiznet_write_bytes(tx_data_start_addr,
                                        website_body_end,
                                        sizeof(website_body_end));
                     tx_data_start_addr += sizeof(website_body_end);
-                    
-                }
-                tx_sock1_write_pointer = tx_data_start_addr;
+                
+                    tx_sock1_write_pointer = tx_sock1_write_pointer + (sizeof(website_body) + sizeof(temp_dynamic_line_buff) + sizeof(website_body_end)); //tx_data_start_addr;
 
-                WIZNET_WRITE(0x0422,((tx_sock1_write_pointer & 0xFF00) >> 8)); //WIZNET_WRITE(0x0424,((tx_sock1_write_pointer & 0xFF00) >> 8));
-                WIZNET_WRITE(0x0423,( tx_sock1_write_pointer & 0x00FF)      ); //WIZNET_WRITE(0x0425,( tx_sock1_write_pointer & 0x00FF)      );
+                }
+                
+
+                WIZNET_WRITE(0x0424,((tx_sock1_write_pointer & 0xFF00) >> 8));
+                WIZNET_WRITE(0x0425,( tx_sock1_write_pointer & 0x00FF)      );
 
                 DELAY_BETWEEN_COMMANDS();
 
