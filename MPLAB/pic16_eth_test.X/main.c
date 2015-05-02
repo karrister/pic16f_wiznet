@@ -217,7 +217,8 @@ typedef enum {
             PEER_CONNECTED,
             REQUEST_RECEIVED,
             PARSE_REQUEST,
-            SEND_RESPONSE
+            SEND_RESPONSE,
+            WAIT_BEFORE_IDLE,
 } mainserverSM;
 
 typedef enum {
@@ -875,8 +876,6 @@ int main(void)
     debug_print("Went through CHIP init, entering main state machine!\n");
 #endif
 
-    debug_print("kaki init complete\n");
-
     BYTE spi_rx_byte                          = 0;
 
     unsigned int rx_data_size                 = 0;
@@ -896,9 +895,9 @@ int main(void)
 
     PARSE_STATUS parse_status = PARSE_NO_MATCH;
 
-    unsigned char print[] = "rx size: xxxx\n";
+    //unsigned char print[] = "rx size: xxxx\n";
 
-    BYTE int_string[] = "0123";
+    //BYTE int_string[] = "0123";
 
     BYTE eth_buff[ETHERNET_BUFF_SIZE];
 
@@ -919,6 +918,17 @@ int main(void)
 #endif
                 LED1_ON();
                 /**SET SERVER SOCKET**/
+
+                //Make sure socket is closed!
+                spi_rx_byte = wiznet_read(0x0403);
+
+                if(spi_rx_byte != SOCK_CLOSED)
+                {
+                    WIZNET_WRITE(0x0403,CLOSE);
+                    g_mainSM_state = 0xff;//reset
+                    break;
+                }
+
                 //Set TCP mode
                 WIZNET_WRITE(GET_SOCK_HW_ADDR_FROM_OFFSET(sock0_base_addr, SOCK_REG_MODE),0x01);
                 //Set port to 80 (www);
@@ -927,6 +937,11 @@ int main(void)
                 
                 //Set socket to open
                 WIZNET_WRITE(GET_SOCK_HW_ADDR_FROM_OFFSET(sock0_base_addr, SOCK_REG_COMMAND),OPEN);
+
+                /* Block while chip is processing command */
+                do {
+                    spi_rx_byte = wiznet_read(0x0401);
+                } while(spi_rx_byte);
 
                 //Read status from chip
                 spi_rx_byte = wiznet_read(0x0403);
@@ -939,6 +954,11 @@ int main(void)
 
                 //Set socket to listen
                 WIZNET_WRITE(0x0401,LISTEN);
+
+                /* Block while chip is processing command */
+                do {
+                    spi_rx_byte = wiznet_read(0x0401);
+                } while(spi_rx_byte);
 
                 //Read status from chip
                 spi_rx_byte = wiznet_read(0x0403);
@@ -962,7 +982,7 @@ int main(void)
 
                 if(spi_rx_byte == SOCK_ESTABLISHED)
                 {
-                    g_mainSM_state = SEND_RESPONSE;//PEER_CONNECTED;
+                    g_mainSM_state = PEER_CONNECTED;
                 }
                 break;
 
@@ -1068,6 +1088,12 @@ int main(void)
                 DELAY_BETWEEN_COMMANDS();
 
                 WIZNET_WRITE(0x0401,RECV);
+
+                /* Block while chip is receiving */
+                do {
+                    spi_rx_byte = wiznet_read(0x0401);
+                } while(spi_rx_byte);
+
 #endif
                 g_mainSM_state = PARSE_REQUEST;
                 break;
@@ -1104,15 +1130,18 @@ int main(void)
                 }
 
                 zeromem(eth_buff, ETHERNET_BUFF_SIZE);
-                
-                g_mainSM_state = SEND_RESPONSE + 1;
+
+                //Let's wait for some time before proceed
+                //delay(63000);
+
+
+                g_mainSM_state = SEND_RESPONSE;
                 break;
-                
+
             case SEND_RESPONSE://send the web site as a response
 #ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case SEND_RESPONSE\n");
 #endif
-#if 1 //comment out send
                 //Check if socket has been closed
                 spi_rx_byte = wiznet_read(0x0403);
                 if(spi_rx_byte != SOCK_ESTABLISHED)
@@ -1125,9 +1154,6 @@ int main(void)
                     g_mainSM_state = IDLE;
                     LED4_ON();
                 }
-#ifdef KARRI_DEBUG_2
-debug_print("start send\n");
-#endif
                 //wait for TX buffer size availability
                 do {
                     tx_getsize_timeout_counter++;
@@ -1157,7 +1183,7 @@ debug_print("start send\n");
 
                 tx_data_offset = tx_sock1_write_pointer & g_tx_sock0_mask;
                 tx_data_start_addr = g_tx_sock0_base + tx_data_offset;
-
+#if 1//karri test
                 { /* Send the website */
 
                     BYTE temp_dynamic_line_buff[DYNAMIC_HTML_LINE_MAX_SIZE];
@@ -1200,35 +1226,27 @@ debug_print("start send\n");
 
                 WIZNET_WRITE(0x0401,SEND);
 
-                debug_print("Sending... \n");
                 /* Block while chip is sending */
                 do {
                     spi_rx_byte = wiznet_read(0x0401);
                 } while(spi_rx_byte);
-#endif
-                debug_print("Sent! \n");
-#if 0
+#endif //karri test
                 WIZNET_WRITE(0x0401,DISCON);
                 
-                DELAY_BETWEEN_COMMANDS();
+                /* Block while chip is disconnecting the socket */
+                do {
+                    spi_rx_byte = wiznet_read(0x0401);
+                } while(spi_rx_byte);
 
                 WIZNET_WRITE(0x0401,CLOSE);
-#endif
-                g_mainSM_state = PEER_CONNECTED;
-                break;
 
-#ifndef TEST_DEBUG
-      case (SEND_RESPONSE + 1):
-          debug_print("response + 1! \n");
-                WIZNET_WRITE(0x0401,DISCON);
+                /* Block while chip is closing the socket */
+                do {
+                    spi_rx_byte = wiznet_read(0x0401);
+                } while(spi_rx_byte);
 
-                DELAY_BETWEEN_COMMANDS();
-
-                WIZNET_WRITE(0x0401,CLOSE);
                 g_mainSM_state = IDLE;
                 break;
-#endif
-
             default:/**ENDING UP HERE CAUSES A SOFTWARE RESET!**/
 #ifdef KARRI_DEBUG
                 debug_print("WARNING!! Doing a soft *RESET* to PIC soon!\n");
