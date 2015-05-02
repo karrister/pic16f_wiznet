@@ -219,6 +219,8 @@ typedef enum {
             PARSE_REQUEST,
             SEND_RESPONSE,
             WAIT_BEFORE_IDLE,
+            CLOSE_SOCKET,
+            DISCONNECT_SOCKET,
 } mainserverSM;
 
 typedef enum {
@@ -286,14 +288,8 @@ short g_portc = 0;
 int g_rx_sock0_mask;
 int g_rx_sock0_base;
 
-int g_rx_sock1_mask;
-int g_rx_sock1_base;
-
 int g_tx_sock0_mask;
 int g_tx_sock0_base;
-
-int g_tx_sock1_mask;
-int g_tx_sock1_base;
 
 int g_mainSM_state = IDLE;
 
@@ -731,23 +727,21 @@ void init_wiznet(void)
     /**SOCKET BUFFER CONFIGURATION**/
     //Setting up the 8K memory for 2 sockets, 4k per socket. Only using 1 socket but why not set up two if by some chance we'd need a second one :)
     //RMSR register - setting 4K to sockets 0 & 1
-    WIZNET_WRITE(REG_RX_MEM_SIZE,0x0A);
+    //WIZNET_WRITE(REG_RX_MEM_SIZE,0x0A);
+    WIZNET_WRITE(REG_RX_MEM_SIZE,0x55);
     DELAY_BETWEEN_COMMANDS();
     //TMSR register - setting 4K to sockets 0 & 1
-    WIZNET_WRITE(REG_TX_MEM_SIZE,0x0A);
+    //WIZNET_WRITE(REG_TX_MEM_SIZE,0x0A);
+    WIZNET_WRITE(REG_TX_MEM_SIZE,0x55);
     DELAY_BETWEEN_COMMANDS();
 
     g_rx_sock0_base = CHIP_BASE_ADDRESS + RX_MEMORY_BASE_ADDRESS;
-    g_rx_sock0_mask = 0x0FFF;
+    g_rx_sock0_mask = 0x07FF; //0x0FFF;
 
-    g_rx_sock1_base = g_rx_sock0_base + (g_rx_sock0_mask + 1);
-    g_rx_sock1_mask = 0x0FFF;
 
     g_tx_sock0_base = CHIP_BASE_ADDRESS + TX_MEMORY_BASE_ADDRESS;
-    g_tx_sock0_mask = 0x0FFF;
+    g_tx_sock0_mask = 0x07FF; //0x0FFF;
 
-    g_tx_sock1_base = g_tx_sock0_base + (g_tx_sock0_mask + 1);
-    g_tx_sock1_mask = 0x0FFF;
 
     
 }
@@ -916,7 +910,6 @@ int main(void)
 #ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case IDLE\n");
 #endif
-                LED1_ON();
                 /**SET SERVER SOCKET**/
 
                 //Make sure socket is closed!
@@ -924,8 +917,7 @@ int main(void)
 
                 if(spi_rx_byte != SOCK_CLOSED)
                 {
-                    WIZNET_WRITE(0x0403,CLOSE);
-                    g_mainSM_state = 0xff;//reset
+                    g_mainSM_state = CLOSE_SOCKET;
                     break;
                 }
 
@@ -948,8 +940,8 @@ int main(void)
 
                 if(spi_rx_byte != SOCK_INIT)
                 {
-                    WIZNET_WRITE(0x0403,CLOSE);
-                    g_mainSM_state = 0xFF; //Reset PIC
+                    g_mainSM_state = CLOSE_SOCKET;
+                    break;
                 }
 
                 //Set socket to listen
@@ -963,13 +955,13 @@ int main(void)
                 //Read status from chip
                 spi_rx_byte = wiznet_read(0x0403);
 
+                g_mainSM_state = LISTENING;
+
                 if(spi_rx_byte != SOCK_LISTEN)
                 {
-                    WIZNET_WRITE(0x0403,CLOSE);
-                    g_mainSM_state = 0xFF; //Reset PIC
+                    g_mainSM_state = CLOSE_SOCKET;
                 }
 
-                g_mainSM_state = LISTENING;
                 break;
 
             case LISTENING:
@@ -984,13 +976,15 @@ int main(void)
                 {
                     g_mainSM_state = PEER_CONNECTED;
                 }
+                else if(spi_rx_byte != SOCK_LISTEN){
+                    g_mainSM_state = CLOSE_SOCKET;
+                }
                 break;
 
             case PEER_CONNECTED:
 #ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case PEER_CONNECTED\n");
 #endif
-                LED1_OFF();
 
                 //Get the size of received data size of socket 0
                 spi_rx_byte = wiznet_read(0x0426);
@@ -1027,12 +1021,8 @@ int main(void)
                 if(spi_rx_byte == SOCK_CLOSED ||
                    spi_rx_byte == SOCK_CLOSE_WAIT)
                 {
-#ifdef KARRI_DEBUG
-                    debug_print("How rude! The socket was closed by the peer!\n");
-#endif
-                    WIZNET_WRITE(0x0403,CLOSE);
-                    //g_mainSM_state = 0xFF; //reset PIC
-                    g_mainSM_state = IDLE;
+                    g_mainSM_state = CLOSE_SOCKET;
+                    break;
                 }
 
                 break;
@@ -1131,10 +1121,6 @@ int main(void)
 
                 zeromem(eth_buff, ETHERNET_BUFF_SIZE);
 
-                //Let's wait for some time before proceed
-                //delay(63000);
-
-
                 g_mainSM_state = SEND_RESPONSE;
                 break;
 
@@ -1146,13 +1132,7 @@ int main(void)
                 spi_rx_byte = wiznet_read(0x0403);
                 if(spi_rx_byte != SOCK_ESTABLISHED)
                 {
-#ifdef KARRI_DEBUG
-                    debug_print("Socket status bad!\n");
-#endif
-                    WIZNET_WRITE(0x0401,DISCON);
-                    WIZNET_WRITE(0x0401,CLOSE);
-                    g_mainSM_state = IDLE;
-                    LED4_ON();
+                    g_mainSM_state = DISCONNECT_SOCKET;
                 }
                 //wait for TX buffer size availability
                 do {
@@ -1166,10 +1146,8 @@ int main(void)
 
                     if(TX_GETSIZE_TIMEOUT_THRESHOLD < tx_getsize_timeout_counter)
                     {
-                        WIZNET_WRITE(0x0401,CLOSE);
-                        g_mainSM_state = IDLE;
+                        g_mainSM_state = DISCONNECT_SOCKET;
                         break;
-                        LED4_ON();
                     }
                 } while(tx_data_size < (sizeof(website_body) + sizeof(website_body_end) + DYNAMIC_HTML_LINE_MAX_SIZE) );
 
@@ -1231,12 +1209,22 @@ int main(void)
                     spi_rx_byte = wiznet_read(0x0401);
                 } while(spi_rx_byte);
 #endif //karri test
+
+                g_mainSM_state = DISCONNECT_SOCKET;
+                break;
+
+            case DISCONNECT_SOCKET:
+
                 WIZNET_WRITE(0x0401,DISCON);
-                
+
                 /* Block while chip is disconnecting the socket */
                 do {
                     spi_rx_byte = wiznet_read(0x0401);
                 } while(spi_rx_byte);
+                
+                g_mainSM_state = CLOSE_SOCKET;
+                /* fall-through to close socket */
+            case CLOSE_SOCKET:
 
                 WIZNET_WRITE(0x0401,CLOSE);
 
