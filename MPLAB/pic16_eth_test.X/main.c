@@ -548,9 +548,12 @@ inline PARSE_STATUS parse_command(BYTE *eth_buff, BYTE *cmd, unsigned int input_
     unsigned int buffer_offset;
     if(!compare_buffers(eth_buff, cmd, input_size, cmd_size, &buffer_offset))
     {
+        debug_print("no match!\n");
         /* No match was found, return immediately */
         return PARSE_NO_MATCH;
     }
+
+    debug_print("match! continue parsing\n");
 
     /* Let's make the buffer to point to local pointer from the wanted offset, after the initial command */
     command_buffer = eth_buff + buffer_offset + cmd_size;
@@ -567,6 +570,7 @@ inline PARSE_STATUS parse_command(BYTE *eth_buff, BYTE *cmd, unsigned int input_
        command_buffer[8] == 'e' &&
        command_buffer[9] == 'd')
     {
+        debug_print("command matched!\n");
         switch(command_buffer[10])
         {
             case '1':
@@ -871,6 +875,8 @@ int main(void)
     debug_print("Went through CHIP init, entering main state machine!\n");
 #endif
 
+    debug_print("kaki init complete\n");
+
     BYTE spi_rx_byte                          = 0;
 
     unsigned int rx_data_size                 = 0;
@@ -901,17 +907,14 @@ int main(void)
     //Get sock0 base address for all the subsequent calls
     sock0_base_addr = get_sock_base_addr_by_sock_num(SOCK0);
 
-//#define KARRI_DEBUG_2
+#define KARRI_DEBUG_SM
 
     while(1)
     {
         switch(g_mainSM_state)
         {
             case IDLE:
-#ifdef KARRI_DEBUG_2
-debug_print("...idle...\n");
-#endif
-#ifdef KARRI_DEBUG
+#ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case IDLE\n");
 #endif
                 LED1_ON();
@@ -950,10 +953,7 @@ debug_print("...idle...\n");
                 break;
 
             case LISTENING:
-#ifdef KARRI_DEBUG_2
-debug_print("...listening...\n");
-#endif
-#ifdef KARRI_DEBUG
+#ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case LISTENING\n");
 #endif
                 DELAY_BETWEEN_COMMANDS();
@@ -967,10 +967,7 @@ debug_print("...listening...\n");
                 break;
 
             case PEER_CONNECTED:
-#ifdef KARRI_DEBUG_2
-debug_print("peer connected\n");
-#endif
-#ifdef KARRI_DEBUG
+#ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case PEER_CONNECTED\n");
 #endif
                 LED1_OFF();
@@ -1021,11 +1018,7 @@ debug_print("peer connected\n");
                 break;
 
             case REQUEST_RECEIVED:
-#ifdef KARRI_DEBUG_2
-debug_print("request received\n");
-#endif
-
-#ifdef KARRI_DEBUG
+#ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case REQUEST_RECEIVED\n");
 #endif
 
@@ -1080,7 +1073,7 @@ debug_print("request received\n");
                 break;
 
             case PARSE_REQUEST:
-#ifdef KARRI_DEBUG
+#ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case PARSE_REQUEST\n");
 #endif
 
@@ -1112,14 +1105,14 @@ debug_print("request received\n");
 
                 zeromem(eth_buff, ETHERNET_BUFF_SIZE);
                 
-                g_mainSM_state = SEND_RESPONSE;
+                g_mainSM_state = SEND_RESPONSE + 1;
                 break;
                 
             case SEND_RESPONSE://send the web site as a response
-#ifdef KARRI_DEBUG
+#ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case SEND_RESPONSE\n");
 #endif
-
+#if 1 //comment out send
                 //Check if socket has been closed
                 spi_rx_byte = wiznet_read(0x0403);
                 if(spi_rx_byte != SOCK_ESTABLISHED)
@@ -1195,7 +1188,7 @@ debug_print("start send\n");
                                        sizeof(website_body_end));
                     tx_data_start_addr += sizeof(website_body_end);
                 
-                    tx_sock1_write_pointer = tx_sock1_write_pointer + (sizeof(website_body) + sizeof(temp_dynamic_line_buff) + sizeof(website_body_end)); //tx_data_start_addr;
+                    tx_sock1_write_pointer = tx_sock1_write_pointer + (sizeof(website_body) + DYNAMIC_HTML_LINE_MAX_SIZE + sizeof(website_body_end));
 
                 }
                 
@@ -1212,17 +1205,30 @@ debug_print("start send\n");
                 do {
                     spi_rx_byte = wiznet_read(0x0401);
                 } while(spi_rx_byte);
-
+#endif
                 debug_print("Sent! \n");
-
+#if 0
                 WIZNET_WRITE(0x0401,DISCON);
                 
                 DELAY_BETWEEN_COMMANDS();
 
                 WIZNET_WRITE(0x0401,CLOSE);
+#endif
+                g_mainSM_state = PEER_CONNECTED;
+                break;
+
+#ifndef TEST_DEBUG
+      case (SEND_RESPONSE + 1):
+          debug_print("response + 1! \n");
+                WIZNET_WRITE(0x0401,DISCON);
+
+                DELAY_BETWEEN_COMMANDS();
+
+                WIZNET_WRITE(0x0401,CLOSE);
                 g_mainSM_state = IDLE;
                 break;
-                
+#endif
+
             default:/**ENDING UP HERE CAUSES A SOFTWARE RESET!**/
 #ifdef KARRI_DEBUG
                 debug_print("WARNING!! Doing a soft *RESET* to PIC soon!\n");
