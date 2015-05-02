@@ -93,8 +93,8 @@ typedef unsigned char DEBUG_MSG;
 #define RX_MEMORY_BASE_ADDRESS      0x6000
 #define TX_MEMORY_BASE_ADDRESS      0x4000
 
-#define MAX_RX_SIZE                 128
 #define ETHERNET_BUFF_SIZE          64
+#define MAX_RX_SIZE                 ETHERNET_BUFF_SIZE
 
 #define MRREG_SOFT_RESET            0x80
 
@@ -514,6 +514,14 @@ inline KARRI_BOOL compare_buffers(BYTE *eth_buff, BYTE *cmd, unsigned int input_
     return KARRI_NOK;
 }
 
+/**
+* This function zeroes out a specified amount of memory, starting from the
+* address given.
+* @param memory Pointer to the buffer to zero out.
+* @param size The size of the buffer to zero out.
+* @see main()
+* @return void
+*/
 inline void zeromem(BYTE *memory, unsigned int size)
 { /* clear out the buffer */
     unsigned int x;
@@ -607,7 +615,12 @@ inline PARSE_STATUS parse_command(BYTE *eth_buff, BYTE *cmd, unsigned int input_
 /********************************************/
 /*Implementations*/
 
-
+/**
+* This function runs a delay loop the specified amount of times.
+* @param count The amount of times to run the delay loop.
+* @see main()
+* @return void
+*/
 void delay(unsigned int count)
 {
     unsigned int x;
@@ -617,6 +630,14 @@ void delay(unsigned int count)
     }
 }
 
+/**
+* Reads the specified amount of bytes from the Wiznet W5100 chip.
+* @param chip_addr The address in the chip address range.
+* @param rx_buff Pointer to the PIC memory to read to.
+* @param len The length of the data to read.
+* @see main()
+* @return void
+*/
 void wiznet_read_bytes(unsigned int chip_addr, BYTE *rx_buff, unsigned int len)
 {
     int x;
@@ -627,7 +648,14 @@ void wiznet_read_bytes(unsigned int chip_addr, BYTE *rx_buff, unsigned int len)
     }
 }
 
-
+/**
+* Writes the specified amount of bytes from the Wiznet W5100 chip.
+* @param chip_addr The address in the chip address range.
+* @param tx_buff Pointer to the PIC memory to write from.
+* @param len The length of the data to write.
+* @see main()
+* @return void
+*/
 void wiznet_write_bytes(unsigned int chip_addr, BYTE *tx_buff, unsigned int len)
 {
     int x;
@@ -742,7 +770,10 @@ void init_wiznet(void)
     g_tx_sock0_base = CHIP_BASE_ADDRESS + TX_MEMORY_BASE_ADDRESS;
     g_tx_sock0_mask = 0x07FF; //0x0FFF;
 
-
+#ifdef DEBUG_INIT
+    LED1_OFF();
+    debug_print("Went through CHIP init, entering main state machine!\n");
+#endif
     
 }
 
@@ -827,7 +858,7 @@ int main(void)
     delay(60000);
 
 
-#ifdef KARRI_DEBUG
+#ifdef INIT_DEBUG
     //Indicate init finished, firmware started
     LED1_ON();
     debug_print("Init finished, LED1 on, FW started!\n");
@@ -860,15 +891,10 @@ int main(void)
 #endif
 
 #else //SPI_DEBUG
-    _nop();
+    ;
 #endif //SPI_DEBUG
     //Init ETH
     init_wiznet();
-
-#ifdef KARRI_DEBUG
-    LED1_OFF();
-    debug_print("Went through CHIP init, entering main state machine!\n");
-#endif
 
     BYTE spi_rx_byte                          = 0;
 
@@ -889,18 +915,12 @@ int main(void)
 
     PARSE_STATUS parse_status = PARSE_NO_MATCH;
 
-    //unsigned char print[] = "rx size: xxxx\n";
-
-    //BYTE int_string[] = "0123";
-
     BYTE eth_buff[ETHERNET_BUFF_SIZE];
 
     unsigned int sock0_base_addr = 0;
 
     //Get sock0 base address for all the subsequent calls
     sock0_base_addr = get_sock_base_addr_by_sock_num(SOCK0);
-
-#define KARRI_DEBUG_SM
 
     while(1)
     {
@@ -910,8 +930,6 @@ int main(void)
 #ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case IDLE\n");
 #endif
-                /**SET SERVER SOCKET**/
-
                 //Make sure socket is closed!
                 spi_rx_byte = wiznet_read(0x0403);
 
@@ -921,12 +939,12 @@ int main(void)
                     break;
                 }
 
+                /**SET SERVER SOCKET**/
                 //Set TCP mode
                 WIZNET_WRITE(GET_SOCK_HW_ADDR_FROM_OFFSET(sock0_base_addr, SOCK_REG_MODE),0x01);
                 //Set port to 80 (www);
                 WIZNET_WRITE(GET_SOCK_HW_ADDR_FROM_OFFSET(sock0_base_addr, SOCK_REG_SOURCE_PORT0),0x00);
                 WIZNET_WRITE(GET_SOCK_HW_ADDR_FROM_OFFSET(sock0_base_addr, SOCK_REG_SOURCE_PORT1),0x50);
-                
                 //Set socket to open
                 WIZNET_WRITE(GET_SOCK_HW_ADDR_FROM_OFFSET(sock0_base_addr, SOCK_REG_COMMAND),OPEN);
 
@@ -935,9 +953,8 @@ int main(void)
                     spi_rx_byte = wiznet_read(0x0401);
                 } while(spi_rx_byte);
 
-                //Read status from chip
+                //Read status from chip and make sure it is correct
                 spi_rx_byte = wiznet_read(0x0403);
-
                 if(spi_rx_byte != SOCK_INIT)
                 {
                     g_mainSM_state = CLOSE_SOCKET;
@@ -952,11 +969,12 @@ int main(void)
                     spi_rx_byte = wiznet_read(0x0401);
                 } while(spi_rx_byte);
 
-                //Read status from chip
-                spi_rx_byte = wiznet_read(0x0403);
-
+                //Set the next state here - however if the socket state is not
+                //correct we might still change this
                 g_mainSM_state = LISTENING;
 
+                //Read status from chip and make sure it is correct
+                spi_rx_byte = wiznet_read(0x0403);
                 if(spi_rx_byte != SOCK_LISTEN)
                 {
                     g_mainSM_state = CLOSE_SOCKET;
@@ -972,20 +990,26 @@ int main(void)
                 //Read status from chip
                 spi_rx_byte = wiznet_read(0x0403);
 
+                //If the socket was established while listening, move to next state
                 if(spi_rx_byte == SOCK_ESTABLISHED)
                 {
                     g_mainSM_state = PEER_CONNECTED;
                 }
-                else if(spi_rx_byte != SOCK_LISTEN){
+                //Or if the socket is not at listening state, we need to start over
+                else if(spi_rx_byte != SOCK_LISTEN)
+                {
                     g_mainSM_state = CLOSE_SOCKET;
                 }
+
+                //Else, continue at listening state
+
                 break;
 
             case PEER_CONNECTED:
 #ifdef KARRI_DEBUG_SM
                 debug_print("mainSM: case PEER_CONNECTED\n");
 #endif
-
+                //TODO: move these right before the break!
                 //Get the size of received data size of socket 0
                 spi_rx_byte = wiznet_read(0x0426);
                 rx_data_size = (unsigned int)(spi_rx_byte << 8);
@@ -993,25 +1017,19 @@ int main(void)
                 rx_data_size |= spi_rx_byte;
 
 
+                //If any data was received, we should move to the next state
                 if(rx_data_size > 0)
                 {
                     g_mainSM_state = REQUEST_RECEIVED;
                 }
+
                 /*
-                 * When working as a server and receiving data from
-                 * a client, and the data size is too much for us
-                 * (afterall, we only have 256 bytes of RAM), currently, on this MCU
-                 * and this application, we will just RESET the CHIP and PIC,
-                 * and we DULY NOTE THIS IS A SEVERE SECURITY HOLE IN A NORMAL
-                 * NETWORK ENVIRONMENT. (but dont give a heck at the moment)
+                 * Our cute little MCU doesn't have a lot of RAM. Thus if the
+                 * received data size is too much, we will just truncate the
+                 * message.
                  */
                 if(rx_data_size > MAX_RX_SIZE)
                 {
-#ifdef KARRI_DEBUG
-                    debug_print("RX too long, truncating!\n");
-#endif
-                    /* If the received data is longer than our receive buffer,
-                     * we'll just truncate the data. */
                     rx_data_size = MAX_RX_SIZE - 1;
                 }
 
@@ -1038,8 +1056,6 @@ int main(void)
                 sprintf( int_string, "RX size: %d\n", rx_data_size );
                 debug_print(int_string);
 #endif
-
-#ifdef EXTENDED_FUNCTIONALITY
 
                 //Get the read pointer to received data of socket 0
                 spi_rx_byte            = wiznet_read(0x0428);
@@ -1084,7 +1100,6 @@ int main(void)
                     spi_rx_byte = wiznet_read(0x0401);
                 } while(spi_rx_byte);
 
-#endif
                 g_mainSM_state = PARSE_REQUEST;
                 break;
 
@@ -1133,6 +1148,7 @@ int main(void)
                 if(spi_rx_byte != SOCK_ESTABLISHED)
                 {
                     g_mainSM_state = DISCONNECT_SOCKET;
+                    break;
                 }
                 //wait for TX buffer size availability
                 do {
@@ -1150,8 +1166,6 @@ int main(void)
                         break;
                     }
                 } while(tx_data_size < (sizeof(website_body) + sizeof(website_body_end) + DYNAMIC_HTML_LINE_MAX_SIZE) );
-
-
 
                 //Get the write pointer
                 spi_rx_byte = wiznet_read(0x0424);

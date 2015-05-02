@@ -1,20 +1,20 @@
-_debug_print: CODE, 3275 0 95
-_delay: CODE, 2578 0 18
+_debug_print: CODE, 2 0 95
+_delay: CODE, 2977 0 18
 __stringtab: STRCODE, 2048 0 18
 _website_body: STRCODE, 2066 0 254
-__stringdata: STRCODE, 2334 0 213
+__stringdata: STRCODE, 2334 0 54
 _website_body_end: STRCODE, 2320 0 8
-_test_wiznet_connection: CODE, 3191 0 84
-_main: CODE, 319 0 1716
-_wiznet_read_bytes: CODE, 3 0 41
-_parse_command: CODE, 145 0 174
-_zeromem: CODE, 2941 0 30
+_test_wiznet_connection: CODE, 3286 0 84
+_main: CODE, 372 0 1663
+_wiznet_read_bytes: CODE, 3059 0 41
+_parse_command: CODE, 198 0 174
+_zeromem: CODE, 2995 0 30
 __initialization: CODE, 2035 0 10
-_get_sock_base_addr_by_sock_num: CODE, 3005 0 46
+_get_sock_base_addr_by_sock_num: CODE, 3100 0 46
 _init_wiznet: CODE, 3370 0 726
-_dev_init: CODE, 3112 0 79
-_wiznet_write_bytes: CODE, 3051 0 61
-_compare_buffers: CODE, 44 0 101
+_dev_init: CODE, 3207 0 79
+_wiznet_write_bytes: CODE, 3146 0 61
+_compare_buffers: CODE, 97 0 101
 _get_cmd: STRCODE, 2328 0 6
-_wiznet_read: CODE, 2971 0 34
-Total: 3714
+_wiznet_read: CODE, 3025 0 34
+Total: 3502
