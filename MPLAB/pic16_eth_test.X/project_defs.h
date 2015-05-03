@@ -247,45 +247,35 @@ static const BYTE get_cmd[] = "GET /";
 
 /* This is the template for the website published on our PIC-server */
 static const BYTE website_body[] =
-" \
-<HEAD> \
-<TITLE>PIC16-webserver</TITLE> \
-</HEAD> \
-<BODY> \
-<H2>Welcome to pic16server. Toggle LEDs: \
-<H1> \
-<a href=\"toggle_led1\">LED1</a> \
-<a href=\"toggle_led2\">LED2</a> \
-<a href=\"toggle_led3\">LED3</a> \
-<a href=\"toggle_led4\">LED4</a> \
-<br><br> \
-<H2>Status:<P> \
-<H1> \
+"\
+<HEAD>\
+<TITLE>PIC16-webserver</TITLE>\
+</HEAD>\
+<BODY>\
+<H2>Welcome to pic16server. Toggle LEDs:\
+<H1>\
+<a href=\"toggle_led1\">LED1 </a>\
+<a href=\"toggle_led2\">LED2 </a>\
+<a href=\"toggle_led3\">LED3 </a>\
+<a href=\"toggle_led4\">LED4</a>\
+<br><br>\
+<H2>Status:<P>\
+<H1>\
 ";
 
-/*
-<HEAD>
-<TITLE>PIC18-webserver</TITLE>
-</HEAD>
-<BODY>
-<H2>Welcome to picserver. Toggle LEDs:
-<H1>
-<a href="toggle_led1">LED1</a>
-<a href="toggle_led2">LED2</a>
-<a href="toggle_led3">LED3</a>
-<a href="toggle_led4">LED4</a>
-<br><br>
-<H2>Status:<P>
-<H1>
-LED1 <font color='green'>ON</font>
-LED2 <font color='green'>ON</font>
-LED3 <font color='red'>OFF</font>
-LED4 <font color='green'>ON</font>
-</body>
- */
+static const BYTE website_leds_on_line[] =
+"\
+LEDs on:<br>|<font color='green'>\
+";
+
+static const BYTE website_leds_off_line[] =
+"\
+</font>|<br><br>LEDs off:<br>|<font color='red'>\
+";
+
 #define DYNAMIC_HTML_LINE_MAX_SIZE 35 //length of the text: LED1 <font color='green'>ON</font>
 
-static const BYTE website_body_end[] = "</BODY>";
+static const BYTE website_body_end[] = "</font>|</BODY>";
 
 
 /*Globals*/

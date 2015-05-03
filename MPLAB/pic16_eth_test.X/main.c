@@ -343,14 +343,14 @@ int main(void)
 
                 tx_data_offset = tx_sock1_write_pointer & g_tx_sock0_mask;
                 tx_data_start_addr = g_tx_sock0_base + tx_data_offset;
-#if 1//karri test
-                { /* Send the website */
 
+                { /* Send the website */
+                    unsigned short tx_space_increased = 0;
                     BYTE temp_dynamic_line_buff[DYNAMIC_HTML_LINE_MAX_SIZE];
                     zeromem(temp_dynamic_line_buff, sizeof(temp_dynamic_line_buff));
-#if 1
+#if 0
                     /*Test characters*/
-                    temp_dynamic_line_buff[5] = 'K';
+                    temp_dynamic_line_buff[5] = ((LED1_STATUS()) ? 'K' : 'T');
                     temp_dynamic_line_buff[6] = 'O';
                     temp_dynamic_line_buff[7] = 'R';
                     temp_dynamic_line_buff[8] = 'S';
@@ -358,23 +358,58 @@ int main(void)
                     /**/
 #endif
 
+                    //website_dynamic_line[31] = 'X';
+
+                    /* Write start of website buffer */
                     wiznet_write_bytes(tx_data_start_addr,
                                        website_body,
                                        sizeof(website_body));
-                    tx_data_start_addr += sizeof(website_body);
+                    tx_space_increased += sizeof(website_body);
+
+                    /* Write the leds on line for website buffer */
+                    wiznet_write_bytes((tx_data_start_addr + tx_space_increased),
+                                       website_leds_on_line,
+                                       sizeof(website_leds_on_line));
+                    tx_space_increased += sizeof(website_leds_on_line);
+
+                    /* Read LED statuses and update buffer for ON LEDs */
+                    temp_dynamic_line_buff[0] = ((LED1_STATUS()) ? '1' : ' ');
+                    temp_dynamic_line_buff[1] = ((LED2_STATUS()) ? '2' : ' ');
+                    temp_dynamic_line_buff[2] = ((LED3_STATUS()) ? '3' : ' ');
+                    temp_dynamic_line_buff[3] = ((LED4_STATUS()) ? '4' : ' ');
 #if 1
-                    wiznet_write_bytes(tx_data_start_addr,
+                    /* Write the ON leds to chip */
+                    wiznet_write_bytes((tx_data_start_addr + tx_space_increased),
                                        temp_dynamic_line_buff,
                                        sizeof(temp_dynamic_line_buff));
-                    tx_data_start_addr += sizeof(temp_dynamic_line_buff);
+                    tx_space_increased += sizeof(temp_dynamic_line_buff);
 #endif
 
-                    wiznet_write_bytes(tx_data_start_addr,
+                    /* Write the leds off line for website buffer */
+                    wiznet_write_bytes((tx_data_start_addr + tx_space_increased),
+                                       website_leds_off_line,
+                                       sizeof(website_leds_off_line));
+                    tx_space_increased += sizeof(website_leds_off_line);
+
+                    /* Read LED statuses and update buffer for OFF LEDs */
+                    temp_dynamic_line_buff[0] = ((!LED1_STATUS()) ? '1' : ' ');
+                    temp_dynamic_line_buff[1] = ((!LED2_STATUS()) ? '2' : ' ');
+                    temp_dynamic_line_buff[2] = ((!LED3_STATUS()) ? '3' : ' ');
+                    temp_dynamic_line_buff[3] = ((!LED4_STATUS()) ? '4' : ' ');
+
+                    /* Write the ON leds to chip */
+                    wiznet_write_bytes((tx_data_start_addr + tx_space_increased),
+                                       temp_dynamic_line_buff,
+                                       sizeof(temp_dynamic_line_buff));
+                    tx_space_increased += sizeof(temp_dynamic_line_buff);
+
+                    /* Write the body ending */
+                    wiznet_write_bytes((tx_data_start_addr + tx_space_increased),
                                        website_body_end,
                                        sizeof(website_body_end));
-                    tx_data_start_addr += sizeof(website_body_end);
+                    tx_space_increased += sizeof(website_body_end);
                 
-                    tx_sock1_write_pointer = tx_sock1_write_pointer + (sizeof(website_body) + DYNAMIC_HTML_LINE_MAX_SIZE + sizeof(website_body_end));
+                    tx_sock1_write_pointer = tx_sock1_write_pointer + tx_space_increased;
 
                 }
                 
@@ -390,7 +425,7 @@ int main(void)
                 do {
                     spi_rx_byte = wiznet_read(SOCKET1_REG_COMMAND);
                 } while(spi_rx_byte);
-#endif //karri test
+
 
                 g_mainSM_state = DISCONNECT_SOCKET;
                 break;

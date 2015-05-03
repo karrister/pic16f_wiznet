@@ -92,10 +92,10 @@ extern "C" {
   } while (0)
 
 /* Read the status of the LEDs */
-#define LED1_STATUS() (PORTC && 0x01)
-#define LED2_STATUS() (PORTC && 0x02)
-#define LED3_STATUS() (PORTC && 0x04)
-#define LED4_STATUS() (PORTC && 0x08)
+#define LED1_STATUS() (PORTC & 0x01)
+#define LED2_STATUS() (PORTC & 0x02)
+#define LED3_STATUS() (PORTC & 0x04)
+#define LED4_STATUS() (PORTC & 0x08)
 
 
 
