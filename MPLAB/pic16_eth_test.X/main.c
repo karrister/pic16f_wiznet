@@ -348,17 +348,6 @@ int main(void)
                     unsigned short tx_space_increased = 0;
                     BYTE temp_dynamic_line_buff[DYNAMIC_HTML_LINE_MAX_SIZE];
                     zeromem(temp_dynamic_line_buff, sizeof(temp_dynamic_line_buff));
-#if 0
-                    /*Test characters*/
-                    temp_dynamic_line_buff[5] = ((LED1_STATUS()) ? 'K' : 'T');
-                    temp_dynamic_line_buff[6] = 'O';
-                    temp_dynamic_line_buff[7] = 'R';
-                    temp_dynamic_line_buff[8] = 'S';
-                    temp_dynamic_line_buff[9] = 'O';
-                    /**/
-#endif
-
-                    //website_dynamic_line[31] = 'X';
 
                     /* Write start of website buffer */
                     wiznet_write_bytes(tx_data_start_addr,
@@ -377,13 +366,12 @@ int main(void)
                     temp_dynamic_line_buff[1] = ((LED2_STATUS()) ? '2' : ' ');
                     temp_dynamic_line_buff[2] = ((LED3_STATUS()) ? '3' : ' ');
                     temp_dynamic_line_buff[3] = ((LED4_STATUS()) ? '4' : ' ');
-#if 1
+
                     /* Write the ON leds to chip */
                     wiznet_write_bytes((tx_data_start_addr + tx_space_increased),
                                        temp_dynamic_line_buff,
                                        sizeof(temp_dynamic_line_buff));
                     tx_space_increased += sizeof(temp_dynamic_line_buff);
-#endif
 
                     /* Write the leds off line for website buffer */
                     wiznet_write_bytes((tx_data_start_addr + tx_space_increased),
